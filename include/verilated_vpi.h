@@ -19,8 +19,6 @@
 ///	This file must be compiled and linked against all objects
 ///	created from Verilator or called by Verilator that use the VPI.
 ///
-///	"//-" indicates features that are as yet unimplemented.
-///
 /// Code available from: http://www.veripool.org/verilator
 ///
 //=========================================================================
@@ -41,7 +39,7 @@
 
 // Not supported yet
 #define _VL_VPI_UNIMP() \
-    vl_fatal(__FILE__,__LINE__,"",Verilated::catName("Unsupported VPI function: ",VL_FUNC))
+    VerilatedVpiError::vpi_unsupported(); vl_fatal(__FILE__,__LINE__,"",Verilated::catName("Unsupported VPI function: ",VL_FUNC));
 
 //======================================================================
 // Implementation
@@ -250,13 +248,21 @@ struct VerilatedVpiTimedCbsCmp {
     }
 };
 
+struct VerilatedVpiError;
+
 class VerilatedVpi {
     enum { CB_ENUM_MAX_VALUE = cbAtEndOfSimTime+1 };	// Maxium callback reason
     typedef set<VerilatedVpioCb*> VpioCbSet;
     typedef set<pair<QData,VerilatedVpioCb*>,VerilatedVpiTimedCbsCmp > VpioTimedCbs;
 
+    struct product_info {
+	PLI_BYTE8* product;
+        PLI_BYTE8* version;
+    };
+
     VpioCbSet		m_cbObjSets[CB_ENUM_MAX_VALUE];	// Callbacks for each supported reason
     VpioTimedCbs	m_timedCbs;	// Time based callbacks
+    VerilatedVpiError  *m_error_infop;
 
     static VerilatedVpi s_s;		// Singleton
 
@@ -338,7 +344,106 @@ public:
 	    }
 	}
     }
+
+    static struct product_info* get_product_info() {
+        // how to import version info here?
+        // static const char* _package_string = PACKAGE_STRING;
+	static struct product_info _product_info = {(PLI_BYTE8*)"Verilator", (PLI_BYTE8*)"3.844 devel"};
+        return &_product_info;
+    };
+
+    static VerilatedVpiError* error_info();
 };
+
+struct VerilatedVpiError {
+    //// Container for vpi error info
+    t_vpi_error_info m_error_info;
+    bool             m_flag;
+    char             m_buff[1024];
+    VerilatedVpiError() : m_flag(false) {
+	m_error_info.product = VerilatedVpi::get_product_info()->product;
+    }
+    void pli(PLI_INT32 level, string file, PLI_INT32 line, string message, ...) {
+        va_list args;
+        m_error_info.state = vpiPLI;
+        va_start(args, message);
+        vsnprintf(m_buff, sizeof(m_buff), message.c_str(), args);
+        va_end(args);
+        set(level, (PLI_BYTE8*)m_buff, (PLI_BYTE8*)file.c_str(), line);
+    }
+    void pli(PLI_INT32 level, PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line, string message, ...) {
+        va_list args;
+        m_error_info.state = vpiPLI;
+        va_start(args, message);
+        vsnprintf(m_buff, sizeof(m_buff), message.c_str(), args);
+        va_end(args);
+        set(level, (PLI_BYTE8*)message.c_str(), code, file, line);
+    }
+    void set(PLI_INT32 level, PLI_BYTE8 *message, PLI_BYTE8 *file, PLI_INT32 line) {
+	m_flag=true;
+        m_error_info.level = level;
+        m_error_info.message = message;
+        m_error_info.file = file;
+        m_error_info.line = line;
+        m_error_info.code = NULL;
+        do_callbacks();
+    }
+    void set(PLI_INT32 level, PLI_BYTE8 *message, PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line) {
+	set(level, message, file, line);
+        m_error_info.code = code;
+        do_callbacks();
+    }
+    void reset() {
+	m_flag=false;
+    }
+    void do_callbacks() {
+	VerilatedVpi::callCbs(cbPLIError);
+    }
+    p_vpi_error_info get() {
+	if (m_flag) return &m_error_info;
+        return NULL;
+    }
+    static void vpi_unsupported() {
+        // Not supported yet
+        p_vpi_error_info error_info_p = VerilatedVpi::error_info()->get();
+        if (error_info_p) {
+    	vl_fatal(error_info_p->file, error_info_p->line, "", error_info_p->message);
+            return;
+        }
+    }
+    static const char* str_from_vpiVal(PLI_INT32 vpiVal) {
+	static const char *names[] = {
+            "*undefined*",
+            "vpiBinStrVal",
+            "vpiOctStrVal",
+            "vpiDecStrVal",
+            "vpiHexStrVal",
+            "vpiScalarVal",
+            "vpiIntVal",
+            "vpiRealVal",
+            "vpiStringVal",
+            "vpiVectorVal",
+            "vpiStrengthVal",
+            "vpiTimeVal",
+            "vpiObjTypeVal",
+            "vpiSuppressVal",
+            "vpiShortIntVal",
+            "vpiLongIntVal",
+            "vpiShortRealVal",
+            "vpiRawTwoStateVal",
+            "vpiRawFourStateVal",
+	};
+        return names[(vpiVal<sizeof(names))?vpiVal:0];
+    }
+};
+
+VerilatedVpiError* VerilatedVpi::error_info() {
+    if (s_s.m_error_infop == NULL) {
+        s_s.m_error_infop = new VerilatedVpiError();
+    }
+    return s_s.m_error_infop;
+}
+
 
 // callback related
 
@@ -359,6 +464,7 @@ vpiHandle vpi_register_cb(p_cb_data cb_data_p) {
     case cbStartOfSimulation:		// FALLTHRU // Supported via vlt_main.cpp
     case cbEndOfSimulation:		// FALLTHRU // Supported via vlt_main.cpp
     case cbValueChange:			// FALLTHRU // Supported via vlt_main.cpp
+    case cbPLIError:			// FALLTHRU // NOP, but need to return handle, so make object
     case cbEnterInteractive:		// FALLTHRU // NOP, but need to return handle, so make object
     case cbExitInteractive:		// FALLTHRU // NOP, but need to return handle, so make object
     case cbInteractiveScopeChange: {	// FALLTHRU // NOP, but need to return handle, so make object
@@ -384,15 +490,15 @@ PLI_INT32 vpi_remove_cb(vpiHandle object) {
     return 1;
 }
 
-//-void vpi_get_cb_info(vpiHandle object, p_cb_data cb_data_p) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
-//-vpiHandle vpi_register_systf(p_vpi_systf_data systf_data_p) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
-//-void vpi_get_systf_info(vpiHandle object, p_vpi_systf_data systf_data_p) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
+void vpi_get_cb_info(vpiHandle object, p_cb_data cb_data_p) {
+    _VL_VPI_UNIMP(); return;
+}
+vpiHandle vpi_register_systf(p_vpi_systf_data systf_data_p) {
+    _VL_VPI_UNIMP(); return 0;
+}
+void vpi_get_systf_info(vpiHandle object, p_vpi_systf_data systf_data_p) {
+    _VL_VPI_UNIMP(); return;
+}
 
 // for obtaining handles
 
@@ -477,9 +583,9 @@ vpiHandle vpi_handle(PLI_INT32 type, vpiHandle object) {
     }
 }
 
-//-vpiHandle vpi_handle_multi(PLI_INT32 type, vpiHandle refHandle1, vpiHandle refHandle2, ... ) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
+vpiHandle vpi_handle_multi(PLI_INT32 type, vpiHandle refHandle1, vpiHandle refHandle2, ... ) {
+    _VL_VPI_UNIMP(); return 0;
+}
 
 vpiHandle vpi_iterate(PLI_INT32 type, vpiHandle object) {
     VL_DEBUG_IF_PLI(VL_PRINTF("-vltVpi:  vpi_iterate %d %p\n",type,object););
@@ -545,9 +651,10 @@ PLI_INT32 vpi_get(PLI_INT32 property, vpiHandle object) {
     }
 }
 
-//-PLI_INT64 vpi_get64(PLI_INT32 property, vpiHandle object) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
+PLI_INT64 vpi_get64(PLI_INT32 property, vpiHandle object) {
+     VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, " %s is currently Unimplemented", VL_FUNC);
+    _VL_VPI_UNIMP(); return 0;
+}
 
 PLI_BYTE8 *vpi_get_str(PLI_INT32 property, vpiHandle object) {
     VL_DEBUG_IF_PLI(VL_PRINTF("-vltVpi:  vpi_get_str %d %p\n",property,object););
@@ -571,20 +678,24 @@ PLI_BYTE8 *vpi_get_str(PLI_INT32 property, vpiHandle object) {
 
 // delay processing
 
-//-void vpi_get_delays(vpiHandle object, p_vpi_delay delay_p) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
-//-void vpi_put_delays(vpiHandle object, p_vpi_delay delay_p) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
+void vpi_get_delays(vpiHandle object, p_vpi_delay delay_p) {
+     VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, " %s is currently unimplemented", VL_FUNC);
+    _VL_VPI_UNIMP(); return;
+}
+void vpi_put_delays(vpiHandle object, p_vpi_delay delay_p) {
+     VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, " %s is currently unimplemented", VL_FUNC);
+    _VL_VPI_UNIMP(); return;
+}
 
 // value processing
 
 void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
     VL_DEBUG_IF_PLI(VL_PRINTF("-vltVpi:  vpi_get_value %p\n",object););
+    VerilatedVpi::error_info()->reset(); // reset vpi error status
     if (VL_UNLIKELY(!value_p)) return;
     if (VerilatedVpioVar* vop = VerilatedVpioVar::castp(object)) {
-	// We presume vpiValue.format = vpiIntVal or if single bit vpiScalarVal
+	// We used to presume vpiValue.format = vpiIntVal or if single bit vpiScalarVal
+        // This may cause backward compatability issues with older code.
 	if (value_p->format == vpiVectorVal) {
 	    // Vector pointer must come from our memory pool
 	    // It only needs to persist until the next vpi_get_value
@@ -624,11 +735,34 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		return;
 	    }
 	    default: {
+                 VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, "Unsupported format (%s) for %s in %s", VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), VL_FUNC);
 		_VL_VPI_UNIMP();
 		return;
 	    }
 	    }
-	} else {
+	} else if (value_p->format == vpiStringVal) {
+	    static VL_THREAD char out[1+VL_MULS_MAX_WORDS*4];
+	    value_p->value.str = out;
+	    switch (vop->varp()->vltype()) {
+	    case VLVT_UINT8:
+	    case VLVT_WDATA:
+            {
+		int bytes = VL_BYTES_I(vop->varp()->range().bits());
+		CData* datap = ((CData*)(vop->varDatap()));
+                int i;
+		for (i=0; i<bytes; i++) {
+                    char val = datap[bytes-i-1];
+     	            out[i] = val?val:' ';
+		}
+                out[i]=0; // NULL terminate
+		return;
+	    }
+            default:
+            VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, "Unsupported format (%s) for %s in %s", VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), VL_FUNC);
+	    _VL_VPI_UNIMP();
+	    return;
+	    }
+	} else if (value_p->format == vpiIntVal) {
 	    switch (vop->varp()->vltype()) {
 	    case VLVT_UINT8:
 		value_p->value.integer = *((CData*)(vop->varDatap()));
@@ -644,24 +778,34 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		// Not legal
 		value_p->value.integer = 0;
 	    default:
+                VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, "Unsupported format (%s) for %s in %s", VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), VL_FUNC);
 		_VL_VPI_UNIMP();
 		return;
 	    }
 	}
     }
     else if (VerilatedVpioConst* vop = VerilatedVpioConst::castp(object)) {
-	value_p->value.integer = vop->num();
-	return;
+	if (value_p->format == vpiIntVal) {
+  	  value_p->value.integer = vop->num();
+  	  return;
+	}
+        // unsupported format error
     }
+    VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, "Unsupported format for %s", VL_FUNC);
     _VL_VPI_UNIMP();
 }
 
 vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 			p_vpi_time time_p, PLI_INT32 flags) {
     VL_DEBUG_IF_PLI(VL_PRINTF("-vltVpi:  vpi_put_value %p %p\n",object, value_p););
-    if (VL_UNLIKELY(!value_p)) return 0;
+    VerilatedVpi::error_info()->reset(); // reset vpi error status
+    if (VL_UNLIKELY(!value_p)) {
+      VerilatedVpi::error_info()->pli(vpiWarning, __FILE__, __LINE__, "Ignoring vpi_put_value with NULL value pointer");
+      return 0;
+    }
     if (VerilatedVpioVar* vop = VerilatedVpioVar::castp(object)) {
-	// We presume vpiValue.format = vpiIntVal or if single bit vpiScalarVal
+	// We used to presume vpiValue.format = vpiIntVal or if single bit vpiScalarVal
+        // This may cause backward compatability issues with older code.
 	VL_DEBUG_IF_PLI(VL_PRINTF("-vltVpi:    vpi_put_value name=%s fmt=%d vali=%d\n",
 				  vop->fullname(), value_p->format, value_p->value.integer);
 			VL_PRINTF("-vltVpi:    varp=%p  putatp=%p\n",
@@ -669,6 +813,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 	if (VL_UNLIKELY(!vop->varp()->isPublicRW())) {
 	    VL_PRINTF("%%Warning: Ignoring vpi_put_value to signal marked read-only, use public_flat_rw instead: %s\n",
 		      vop->fullname());
+            VerilatedVpi::error_info()->pli(vpiWarning, __FILE__, __LINE__, "Ignoring vpi_put_value to signal marked read-only, use public_flat_rw instead: ", vop->fullname());
 	    return 0;
 	}
 	if (value_p->format == vpiVectorVal) {
@@ -698,11 +843,28 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		return object;
 	    }
 	    default: {
+                VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, "Unsupported format (%s) for %s in %s", VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), VL_FUNC);
 		_VL_VPI_UNIMP();
 		return NULL;
 	    }
 	    }
-	} else {
+	} else if (value_p->format == vpiStringVal) {
+	    switch (vop->varp()->vltype()) {
+	    case VLVT_WDATA: {
+		int bytes = VL_BYTES_I(vop->varp()->range().bits());
+                int len   = strlen(value_p->value.str);
+		CData* datap = ((CData*)(vop->varDatap()));
+		for (int i=0; i<bytes; i++) {
+                    datap[i] = (i <= len)?value_p->value.str[len-i-1]:0;
+		}
+		return object;
+	    }
+            default:
+            VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, "Unsupported format (%s) for %s in %s", VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), VL_FUNC);
+	    _VL_VPI_UNIMP();
+	    return 0;
+	    }
+	} else if (value_p->format == vpiIntVal) {
 	    switch (vop->varp()->vltype()) {
 	    case VLVT_UINT8:
 		*((CData*)(vop->varDatap())) = vop->mask() & value_p->value.integer;
@@ -716,29 +878,31 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 	    case VLVT_WDATA: // FALLTHRU
 	    case VLVT_UINT64: // FALLTHRU
 	    default:
+                VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, "Unsupported format (%s) for %s in %s", VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), VL_FUNC);
 		_VL_VPI_UNIMP();
 		return 0;
 	    }
 	}
     }
+    VerilatedVpi::error_info()->pli(vpiError, __FILE__, __LINE__, "Unsupported format (%s) for ?? in %s", VerilatedVpiError::str_from_vpiVal(value_p->format), VL_FUNC);
     _VL_VPI_UNIMP(); return NULL;
 }
 
-//-void vpi_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p,
-//-			 PLI_INT32 *index_p, PLI_UINT32 num) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
-//-void vpi_put_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p,
-//-			 PLI_INT32 *index_p, PLI_UINT32 num) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
+void vpi_get_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p,
+			 PLI_INT32 *index_p, PLI_UINT32 num) {
+    _VL_VPI_UNIMP(); return;
+}
+void vpi_put_value_array(vpiHandle object, p_vpi_arrayvalue arrayvalue_p,
+			 PLI_INT32 *index_p, PLI_UINT32 num) {
+    _VL_VPI_UNIMP(); return;
+}
 
 
 // time processing
 
-//-void vpi_get_time(vpiHandle object, p_vpi_time time_p) {
-//-    _VL_VPI_UNIMP();
-//-}
+void vpi_get_time(vpiHandle object, p_vpi_time time_p) {
+    _VL_VPI_UNIMP(); return;
+}
 
 // I/O routines
 
@@ -750,9 +914,9 @@ PLI_UINT32 vpi_mcd_close(PLI_UINT32 mcd) {
     VL_FCLOSE_I(mcd); return 0;
 }
 
-//-PLI_BYTE8 *vpi_mcd_name(PLI_UINT32 mcd) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
+PLI_BYTE8 *vpi_mcd_name(PLI_UINT32 mcd) {
+    _VL_VPI_UNIMP(); return 0;
+}
 
 PLI_INT32 vpi_mcd_printf(PLI_UINT32 mcd, PLI_BYTE8 *formatp, ...) {
     va_list ap;
@@ -795,12 +959,14 @@ PLI_INT32 vpi_mcd_flush(PLI_UINT32 mcd) {
 
 // utility routines
 
-//-PLI_INT32 vpi_compare_objects(vpiHandle object1, vpiHandle object2) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
-//-PLI_INT32 vpi_chk_error(p_vpi_error_info error_info_p) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
+PLI_INT32 vpi_compare_objects(vpiHandle object1, vpiHandle object2) {
+    _VL_VPI_UNIMP(); return 0;
+}
+PLI_INT32 vpi_chk_error(p_vpi_error_info error_info_p) {
+    // executing vpi_chk_error does not reset error
+    error_info_p = VerilatedVpi::error_info()->get();
+    return 0;
+};
 
 PLI_INT32 vpi_free_object(vpiHandle object) {
     return vpi_release_handle(object);  // Deprecated
@@ -815,24 +981,27 @@ PLI_INT32 vpi_release_handle (vpiHandle object) {
     return 1;
 }
 
-//-PLI_INT32 vpi_get_vlog_info(p_vpi_vlog_info vlog_info_p) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
+PLI_INT32 vpi_get_vlog_info(p_vpi_vlog_info vlog_info_p) {
+    vlog_info_p->argc = Verilated::getCommandArgs()->argc;
+    vlog_info_p->argv = (PLI_BYTE8**)Verilated::getCommandArgs()->argv;
+    vlog_info_p->product = VerilatedVpi::get_product_info()->product;
+    vlog_info_p->version = VerilatedVpi::get_product_info()->version;
+}
 
 // routines added with 1364-2001
 
-//-PLI_INT32 vpi_get_data(PLI_INT32 id, PLI_BYTE8 *dataLoc, PLI_INT32 numOfBytes) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
-//-PLI_INT32 vpi_put_data(PLI_INT32 id, PLI_BYTE8 *dataLoc, PLI_INT32 numOfBytes) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
-//-void *vpi_get_userdata(vpiHandle obj) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
-//-PLI_INT32 vpi_put_userdata(vpiHandle obj, void *userdata) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
+PLI_INT32 vpi_get_data(PLI_INT32 id, PLI_BYTE8 *dataLoc, PLI_INT32 numOfBytes) {
+    _VL_VPI_UNIMP(); return 0;
+}
+PLI_INT32 vpi_put_data(PLI_INT32 id, PLI_BYTE8 *dataLoc, PLI_INT32 numOfBytes) {
+    _VL_VPI_UNIMP(); return 0;
+}
+void *vpi_get_userdata(vpiHandle obj) {
+    _VL_VPI_UNIMP(); return 0;
+}
+PLI_INT32 vpi_put_userdata(vpiHandle obj, void *userdata) {
+    _VL_VPI_UNIMP(); return 0;
+}
 
 PLI_INT32 vpi_control(PLI_INT32 operation, ...) {
     VL_DEBUG_IF_PLI(VL_PRINTF("-vltVpi:  vpi_control %d\n",operation););
@@ -849,9 +1018,9 @@ PLI_INT32 vpi_control(PLI_INT32 operation, ...) {
     _VL_VPI_UNIMP(); return 0;
 }
 
-//-vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index, PLI_INT32 *index_array) {
-//-    _VL_VPI_UNIMP(); return 0;
-//-}
+vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index, PLI_INT32 *index_array) {
+    _VL_VPI_UNIMP(); return 0;
+}
 
 //======================================================================
 

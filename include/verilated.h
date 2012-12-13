@@ -236,6 +236,11 @@ private:
     static VL_THREAD const char*	t_dpiFilename;	///< DPI context filename
     static VL_THREAD int		t_dpiLineno;	///< DPI context line number
 
+    static struct VerilatedCommandArgs {
+	int          argc;
+        const char** argv;
+    } s_args;
+
 public:
 
     // METHODS - User called
@@ -275,6 +280,7 @@ public:
     /// Record command line arguments, for retrieval by $test$plusargs/$value$plusargs
     static void commandArgs(int argc, const char** argv);
     static void commandArgs(int argc, char** argv) { commandArgs(argc,(const char**)argv); }
+    static struct VerilatedCommandArgs* getCommandArgs() {return &s_args;}
     static const char* commandArgsPlusMatch(const char* prefixp);
 
     /// For debugging, print text list of all scope names with

@@ -40,6 +40,7 @@ Verilated::Serialized Verilated::s_s;
 VL_THREAD const VerilatedScope* Verilated::t_dpiScopep = NULL;
 VL_THREAD const char* Verilated::t_dpiFilename = "";
 VL_THREAD int Verilated::t_dpiLineno = 0;
+VL_THREAD struct Verilated::VerilatedCommandArgs Verilated::s_args = {0, NULL};
 
 VerilatedImp  VerilatedImp::s_s;
 
@@ -1064,6 +1065,8 @@ void Verilated::flushCb(VerilatedVoidCb cb) {
 }
 
 void Verilated::commandArgs(int argc, const char** argv) {
+    s_args.argc = argc;
+    s_args.argv = argv;
     VerilatedImp::commandArgs(argc,argv);
 }
 
