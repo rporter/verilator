@@ -84,6 +84,9 @@ public:
 	return __LINE__; \
     }
 
+#define CHECK_RESULT_CSTR_STRIP(got, exp) \
+    CHECK_RESULT_CSTR(got+strspn(got, " "), exp)
+
 int _mon_check_mcd() {
     PLI_INT32 status;
     
@@ -352,6 +355,27 @@ int _mon_check_quad() {
     return 0;
 }
 
+int _mon_check_string() {
+    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)"t.text", NULL);
+    CHECK_RESULT_NZ(vh2);
+
+    static char const lorem[] = "lorem ipsum";
+    s_vpi_value v;
+//    s_vpi_time t = { .type = vpiSimTime, .high = 0, .low = 0};
+    s_vpi_time t = { vpiSimTime, 0, 0};
+
+    v.format = vpiStringVal;
+    vpi_get_value(vh2, &v);
+
+    CHECK_RESULT_CSTR_STRIP(v.value.str, "Verilog Test module");
+
+    v.value.str = (PLI_BYTE8*)lorem;
+
+    vpi_put_value(vh2, &v, &t, vpiNoDelay);
+
+    return 0;
+}
+
 int mon_check() {
     // Callback from initial block in monitor
     if (int status = _mon_check_mcd()) return status;
@@ -361,6 +385,7 @@ int mon_check() {
     if (int status = _mon_check_varlist()) return status;
     if (int status = _mon_check_getput()) return status;
     if (int status = _mon_check_quad()) return status;
+    if (int status = _mon_check_string()) return status;
     return 0; // Ok
 }
 
