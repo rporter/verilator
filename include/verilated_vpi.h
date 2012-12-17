@@ -750,9 +750,11 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 	    static VL_THREAD char out[1+VL_MULS_MAX_WORDS*4];
 	    value_p->value.str = out;
 	    switch (vop->varp()->vltype()) {
-	    case VLVT_UINT8:
-	    case VLVT_WDATA:
-            {
+	    case VLVT_UINT8 :
+            case VLVT_UINT16:
+            case VLVT_UINT32:
+            case VLVT_UINT64:
+	    case VLVT_WDATA: {
 		int bytes = VL_BYTES_I(vop->varp()->range().bits());
 		CData* datap = ((CData*)(vop->varDatap()));
                 int i;
@@ -857,6 +859,10 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 	    }
 	} else if (value_p->format == vpiStringVal) {
 	    switch (vop->varp()->vltype()) {
+	    case VLVT_UINT8 :
+            case VLVT_UINT16:
+            case VLVT_UINT32:
+            case VLVT_UINT64:
 	    case VLVT_WDATA: {
 		int bytes = VL_BYTES_I(vop->varp()->range().bits());
                 int len   = strlen(value_p->value.str);
@@ -969,9 +975,13 @@ PLI_INT32 vpi_compare_objects(vpiHandle object1, vpiHandle object2) {
 }
 PLI_INT32 vpi_chk_error(p_vpi_error_info error_info_p) {
     // executing vpi_chk_error does not reset error
-    error_info_p = VerilatedVpi::error_info()->getError();
-    if (!error_info_p) return 0; // nothing at all
-    return error_info_p->level >= vpiError; // return zero for vpiNotice, vpiWarning
+    // error_info_p can be NULL, so only return level in that case
+    p_vpi_error_info _error_info_p = VerilatedVpi::error_info()->getError();
+    if (error_info_p && _error_info_p) {
+      *error_info_p = *_error_info_p;
+    }
+    if (!_error_info_p) return 0; // no error occured
+    return _error_info_p->level;  // return error severity level
 };
 
 PLI_INT32 vpi_free_object(vpiHandle object) {

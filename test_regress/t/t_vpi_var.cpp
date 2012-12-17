@@ -356,22 +356,37 @@ int _mon_check_quad() {
 }
 
 int _mon_check_string() {
-    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)"t.text", NULL);
-    CHECK_RESULT_NZ(vh2);
+    static struct {
+	const char *name;
+        const char *initial;
+        const char *value;
+    } text_test_obs[] = {
+        {"t.text_byte", "B", "xxA"}, // x's dropped
+        {"t.text_half", "Hf", "xxT2"}, // x's dropped
+        {"t.text_word", "Word", "Tree"},
+        {"t.text_long", "Long64b", "44Four44"},
+        {"t.text"     , "Verilog Test module", "lorem ipsum"},
+    };
 
-    static char const lorem[] = "lorem ipsum";
-    s_vpi_value v;
-//    s_vpi_time t = { .type = vpiSimTime, .high = 0, .low = 0};
-    s_vpi_time t = { vpiSimTime, 0, 0};
+    for (int i=0; i<5; i++) {
+      VlVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)text_test_obs[i].name, NULL);
+      CHECK_RESULT_NZ(vh1);
+  
+      s_vpi_value v;
+      s_vpi_time t = { vpiSimTime, 0, 0};
+      s_vpi_error_info e;
 
-    v.format = vpiStringVal;
-    vpi_get_value(vh2, &v);
-
-    CHECK_RESULT_CSTR_STRIP(v.value.str, "Verilog Test module");
-
-    v.value.str = (PLI_BYTE8*)lorem;
-
-    vpi_put_value(vh2, &v, &t, vpiNoDelay);
+      v.format = vpiStringVal;
+      vpi_get_value(vh1, &v);
+      if (vpi_chk_error(&e)) {
+	  printf("%%vpi_chk_error : %s\n", e.message);
+      }
+  
+      CHECK_RESULT_CSTR_STRIP(v.value.str, text_test_obs[i].initial);
+  
+      v.value.str = (PLI_BYTE8*)text_test_obs[i].value;
+      vpi_put_value(vh1, &v, &t, vpiNoDelay);
+    }
 
     return 0;
 }

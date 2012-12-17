@@ -33,7 +33,11 @@ extern "C" int mon_check();
    reg [31:0] 	   count	/*verilator public_flat_rd */;
    reg [31:0] 	   half_count	/*verilator public_flat_rd */;
 
-   reg [511:0]     text         /*verilator public_flat_rw @(posedge clk) */;
+   reg [7:0] 	   text_byte    /*verilator public_flat_rw @(posedge clk) */;
+   reg [15:0] 	   text_half    /*verilator public_flat_rw @(posedge clk) */;
+   reg [31:0] 	   text_word    /*verilator public_flat_rw @(posedge clk) */;
+   reg [63:0] 	   text_long    /*verilator public_flat_rw @(posedge clk) */;
+   reg [511:0] 	   text         /*verilator public_flat_rw @(posedge clk) */;
    
    integer 	  status;
 
@@ -42,6 +46,10 @@ extern "C" int mon_check();
    // Test loop
    initial begin
       onebit = 1'b0;
+      text_byte = "B";
+      text_half = "Hf";
+      text_word = "Word";
+      text_long = "Long64b";
       text = "Verilog Test module";
 `ifdef VERILATOR
       status = $c32("mon_check()");
@@ -55,6 +63,10 @@ extern "C" int mon_check();
       if (onebit != 1'b1) $stop;
       if (quads[2] != 62'h12819213_abd31a1c) $stop;
       if (quads[3] != 62'h1c77bb9b_3784ea09) $stop;
+      if (text_byte != "A") $stop;
+      if (text_half != "T2") $stop;
+      if (text_word != "Tree") $stop;
+      if (text_long != "44Four44") $stop;
       if (text != "lorem ipsum") $stop;
    end
 
