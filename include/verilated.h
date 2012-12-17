@@ -28,6 +28,7 @@
 #ifndef _VERILATED_H_
 #define _VERILATED_H_ 1 ///< Header Guard
 
+#include "verilated_config.h"
 #include "verilatedos.h"
 
 #include <cassert>
@@ -236,9 +237,11 @@ private:
     static VL_THREAD const char*	t_dpiFilename;	///< DPI context filename
     static VL_THREAD int		t_dpiLineno;	///< DPI context line number
 
-    static struct VerilatedCommandArgs {
+    // no need to be save-restored (serialized) the
+    // assumption is that the restore is allowed to pass different arguments
+    static struct CommandArgValues {
 	int          argc;
-        const char** argv;
+	const char** argv;
     } s_args;
 
 public:
@@ -280,8 +283,12 @@ public:
     /// Record command line arguments, for retrieval by $test$plusargs/$value$plusargs
     static void commandArgs(int argc, const char** argv);
     static void commandArgs(int argc, char** argv) { commandArgs(argc,(const char**)argv); }
-    static struct VerilatedCommandArgs* getCommandArgs() {return &s_args;}
+    static CommandArgValues* getCommandArgs() {return &s_args;}
     static const char* commandArgsPlusMatch(const char* prefixp);
+
+    /// Produce name & version for (at least) VPI
+    static const char* productName() { return VERILATOR_PRODUCT; }
+    static const char* productVersion() { return VERILATOR_VERSION; }
 
     /// For debugging, print text list of all scope names with
     /// dpiImport/Export context.  This function may change in future
