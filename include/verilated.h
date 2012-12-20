@@ -230,6 +230,7 @@ private:
 	bool		s_calcUnusedSigs;	///< Waves file on, need all signals calculated
 	bool		s_gotFinish;		///< A $finish statement executed
 	bool		s_assertOn;		///< Assertions are enabled
+        bool            s_fatalOnVpiError;      ///< Stop on vpi error/unsupported
 	Serialized();
     } s_s;
 
@@ -276,6 +277,9 @@ public:
     /// Enable/disable assertions
     static void assertOn(bool flag) { s_s.s_assertOn=flag; }
     static bool assertOn() { return s_s.s_assertOn; }
+    /// Enable/disable vpi fatal
+    static void fatalOnVpiError(bool flag) { s_s.s_fatalOnVpiError=flag; }
+    static bool fatalOnVpiError() { return s_s.s_fatalOnVpiError; }
     /// Flush callback for VCD waves
     static void flushCb(VerilatedVoidCb cb);
     static void flushCall() { if (s_flushCb) (*s_flushCb)(); }

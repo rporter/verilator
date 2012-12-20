@@ -87,6 +87,7 @@ Verilated::Serialized::Serialized() {
     s_calcUnusedSigs = false;
     s_gotFinish = false;
     s_assertOn = true;
+    s_fatalOnVpiError = true; // retains old default behaviour
 }
 
 //===========================================================================

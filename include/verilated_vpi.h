@@ -374,11 +374,11 @@ class VerilatedVpiError {
 	do_callbacks();
     }
     void do_callbacks() {
-        if (getError()->level < vpiError) return; // Don't do anything if not an error
 	VerilatedVpi::callCbs(cbPLIError);
-#ifdef VL_VPI_FATAL_ON_UNSUPPORTED
-        vpi_unsupported();
-#endif
+        if (getError()->level >= vpiError && Verilated::fatalOnVpiError()) {
+          // Stop on vpi error/unsupported
+          vpi_unsupported();
+	}
     }
 public:
     VerilatedVpiError() : m_flag(false) {
@@ -440,6 +440,102 @@ public:
 	    "vpiShortRealVal",
 	    "vpiRawTwoStateVal",
 	    "vpiRawFourStateVal",
+	};
+	return names[(vpiVal<sizeof(names))?vpiVal:0];
+    }
+    static const char* str_from_vpiObjType(PLI_INT32 vpiVal) {
+	static const char *names[] = {
+	    "*undefined*",
+	    "vpiAlways",
+	    "vpiAssignStmt",
+	    "vpiAssignment",
+	    "vpiBegin",
+	    "vpiCase",
+	    "vpiCaseItem",
+	    "vpiConstant",
+	    "vpiContAssign",
+	    "vpiDeassign",
+	    "vpiDefParam",
+	    "vpiDelayControl",
+	    "vpiDisable",
+	    "vpiEventControl",
+	    "vpiEventStmt",
+	    "vpiFor",
+	    "vpiForce",
+	    "vpiForever",
+	    "vpiFork",
+	    "vpiFuncCall",
+	    "vpiFunction",
+	    "vpiGate",
+	    "vpiIf",
+	    "vpiIfElse",
+	    "vpiInitial",
+	    "vpiIntegerVar",
+	    "vpiInterModPath",
+	    "vpiIterator",
+	    "vpiIODecl",
+	    "vpiMemory",
+	    "vpiMemoryWord",
+	    "vpiModPath",
+	    "vpiModule",
+	    "vpiNamedBegin",
+	    "vpiNamedEvent",
+	    "vpiNamedFork",
+	    "vpiNet",
+	    "vpiNetBit",
+	    "vpiNullStmt",
+	    "vpiOperation",
+	    "vpiParamAssign",
+	    "vpiParameter",
+	    "vpiPartSelect",
+	    "vpiPathTerm",
+	    "vpiPort",
+	    "vpiPortBit",
+	    "vpiPrimTerm",
+	    "vpiRealVar",
+	    "vpiReg",
+	    "vpiRegBit",
+	    "vpiRelease",
+	    "vpiRepeat",
+	    "vpiRepeatControl",
+	    "vpiSchedEvent",
+	    "vpiSpecParam",
+	    "vpiSwitch",
+	    "vpiSysFuncCall",
+	    "vpiSysTaskCall",
+	    "vpiTableEntry",
+	    "vpiTask",
+	    "vpiTaskCall",
+	    "vpiTchk",
+	    "vpiTchkTerm",
+	    "vpiTimeVar",
+	    "vpiTimeQueue",
+	    "vpiUdp",
+	    "vpiUdpDefn",
+	    "vpiUserSystf",
+	    "vpiVarSelect",
+	    "vpiWait",
+	    "vpiWhile",
+	    "vpiAttribute",
+	    "vpiBitSelect",
+	    "vpiCallback",
+	    "vpiDelayTerm",
+	    "vpiDelayDevice",
+	    "vpiFrame",
+	    "vpiGateArray",
+	    "vpiModuleArray",
+	    "vpiPrimitiveArray",
+	    "vpiNetArray",
+	    "vpiRange",
+	    "vpiRegArray",
+	    "vpiSwitchArray",
+	    "vpiUdpArray",
+	    "vpiContAssignBit",
+	    "vpiNamedEventArray",
+	    "vpiIndexedPartSelect",
+	    "vpiGenScopeArray",
+	    "vpiGenScope",
+  	    "vpiGenVar"
 	};
 	return names[(vpiVal<sizeof(names))?vpiVal:0];
     }
@@ -612,11 +708,9 @@ vpiHandle vpi_iterate(PLI_INT32 type, vpiHandle object) {
 	return ((new VerilatedVpioVarIter(vop->scopep()))
 		->castVpiHandle());
     }
-    case vpiIODecl: // Skipping - we'll put under reg
-    case vpiNet: // Skipping - we'll put under reg
-	return 0;
     default:
-	_VL_VPI_UNIMP(); return 0;
+        _VL_VPI_WARN(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiObjType(type));
+	return 0;
     }
 }
 vpiHandle vpi_scan(vpiHandle object) {
@@ -746,33 +840,64 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		return;
 	    }
 	    }
+	} else if (value_p->format == vpiBinStrVal) {
+	    static VL_THREAD char out[1+VL_MULS_MAX_WORDS*32];
+	    value_p->value.str = out;
+	    switch (vop->varp()->vltype()) {
+	    case VLVT_UINT8 :
+	    case VLVT_UINT16:
+	    case VLVT_UINT32:
+	    case VLVT_UINT64:
+	    case VLVT_WDATA: {
+		int bits = vop->varp()->range().bits();
+		CData* datap = ((CData*)(vop->varDatap()));
+		int i;
+		if (bits > VL_MULS_MAX_WORDS*32) {
+		  // limit maximum size of output to size of buffer to prevent overrun.
+		  bits = VL_MULS_MAX_WORDS*32;
+		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size VL_MULS_MAX_WORDS is less than required", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		}
+		for (i=0; i<bits; i++) {
+		    char val = (datap[(bits-i)>>3]>>(i&7))&1;
+		    out[i] = val?'1':'0';
+		}
+		out[i]=0; // NULL terminate
+		return;
+	    }
+	    default:
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		return;
+	    }
+	} else if (value_p->format == vpiOctStrVal) {
+	} else if (value_p->format == vpiDecStrVal) {
+	} else if (value_p->format == vpiHexStrVal) {
 	} else if (value_p->format == vpiStringVal) {
 	    static VL_THREAD char out[1+VL_MULS_MAX_WORDS*4];
 	    value_p->value.str = out;
 	    switch (vop->varp()->vltype()) {
 	    case VLVT_UINT8 :
-            case VLVT_UINT16:
-            case VLVT_UINT32:
-            case VLVT_UINT64:
+	    case VLVT_UINT16:
+	    case VLVT_UINT32:
+	    case VLVT_UINT64:
 	    case VLVT_WDATA: {
 		int bytes = VL_BYTES_I(vop->varp()->range().bits());
 		CData* datap = ((CData*)(vop->varDatap()));
-                int i;
-                if (bytes > VL_MULS_MAX_WORDS*4) {
+		int i;
+		if (bytes > VL_MULS_MAX_WORDS*4) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
-                  bytes = VL_MULS_MAX_WORDS*4;
-                  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size VL_MULS_MAX_WORDS is less than required", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		  bytes = VL_MULS_MAX_WORDS*4;
+		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size VL_MULS_MAX_WORDS is less than required", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
 		}
 		for (i=0; i<bytes; i++) {
-                    char val = datap[bytes-i-1];
-     	            out[i] = val?val:' ';
+		    char val = datap[bytes-i-1];
+		    out[i] = val?val:' ';
 		}
-                out[i]=0; // NULL terminate
+		out[i]=0; // NULL terminate
 		return;
 	    }
-            default:
-            _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
-	    return;
+	    default:
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		return;
 	    }
 	} else if (value_p->format == vpiIntVal) {
 	    switch (vop->varp()->vltype()) {
@@ -857,24 +982,46 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		return NULL;
 	    }
 	    }
-	} else if (value_p->format == vpiStringVal) {
+	} else if (value_p->format ==  vpiBinStrVal) {
 	    switch (vop->varp()->vltype()) {
 	    case VLVT_UINT8 :
-            case VLVT_UINT16:
-            case VLVT_UINT32:
-            case VLVT_UINT64:
+	    case VLVT_UINT16:
+	    case VLVT_UINT32:
+	    case VLVT_UINT64:
 	    case VLVT_WDATA: {
 		int bytes = VL_BYTES_I(vop->varp()->range().bits());
-                int len   = strlen(value_p->value.str);
+		int len	  = strlen(value_p->value.str);
 		CData* datap = ((CData*)(vop->varDatap()));
 		for (int i=0; i<bytes; i++) {
-                    datap[i] = (i <= len)?value_p->value.str[len-i-1]:0;
+		    datap[i] = (i <= len)?value_p->value.str[len-i-1]:0;
 		}
 		return object;
 	    }
-            default:
-            _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
-	    return 0;
+	    default:
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		return 0;
+	    }
+	} else if (value_p->format ==  vpiOctStrVal) {
+	} else if (value_p->format ==  vpiDecStrVal) {
+	} else if (value_p->format ==  vpiHexStrVal) {
+	} else if (value_p->format == vpiStringVal) {
+	    switch (vop->varp()->vltype()) {
+	    case VLVT_UINT8 :
+	    case VLVT_UINT16:
+	    case VLVT_UINT32:
+	    case VLVT_UINT64:
+	    case VLVT_WDATA: {
+		int bytes = VL_BYTES_I(vop->varp()->range().bits());
+		int len	  = strlen(value_p->value.str);
+		CData* datap = ((CData*)(vop->varDatap()));
+		for (int i=0; i<bytes; i++) {
+		    datap[i] = (i <= len)?value_p->value.str[len-i-1]:0;
+		}
+		return object;
+	    }
+	    default:
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		return 0;
 	    }
 	} else if (value_p->format == vpiIntVal) {
 	    switch (vop->varp()->vltype()) {
@@ -1002,6 +1149,7 @@ PLI_INT32 vpi_get_vlog_info(p_vpi_vlog_info vlog_info_p) {
     vlog_info_p->argv = (PLI_BYTE8**)Verilated::getCommandArgs()->argv;
     vlog_info_p->product = (PLI_BYTE8*)Verilated::productName();
     vlog_info_p->version = (PLI_BYTE8*)Verilated::productVersion();
+    return 1;
 }
 
 // routines added with 1364-2001
