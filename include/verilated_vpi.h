@@ -858,8 +858,8 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size VL_MULS_MAX_WORDS is less than required", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
 		}
 		for (i=0; i<bits; i++) {
-		    char val = (datap[(bits-i)>>3]>>(i&7))&1;
-		    out[i] = val?'1':'0';
+		    char val = (datap[i>>3]>>(i&7))&1;
+		    out[bits-i-1] = val?'1':'0';
 		}
 		out[i]=0; // NULL terminate
 		return;
@@ -982,18 +982,23 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		return NULL;
 	    }
 	    }
-	} else if (value_p->format ==  vpiBinStrVal) {
+	} else if (value_p->format == vpiBinStrVal) {
 	    switch (vop->varp()->vltype()) {
 	    case VLVT_UINT8 :
 	    case VLVT_UINT16:
 	    case VLVT_UINT32:
 	    case VLVT_UINT64:
 	    case VLVT_WDATA: {
-		int bytes = VL_BYTES_I(vop->varp()->range().bits());
-		int len	  = strlen(value_p->value.str);
+		int bits = vop->varp()->range().bits();
+		int len	 = strlen(value_p->value.str);
 		CData* datap = ((CData*)(vop->varDatap()));
-		for (int i=0; i<bytes; i++) {
-		    datap[i] = (i <= len)?value_p->value.str[len-i-1]:0;
+		for (int i=0; i<bits; i++) {
+                    char set = (i <= len)?(value_p->value.str[len-i-1]=='1'):0;
+		    if (div(i,8).rem) {
+  		        datap[i>>3] |= set<<(i&7);
+		    } else {
+		        datap[i>>3]  = set;
+		    }
 		}
 		return object;
 	    }
