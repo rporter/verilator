@@ -37,9 +37,11 @@
 //======================================================================
 // Internal macros
 
-#define _VL_VPI_INTERNAL    VerilatedVpi::error_info()->pliInternal
-#define _VL_VPI_ERROR       VerilatedVpi::error_info()->pliError
-#define _VL_VPI_WARN        VerilatedVpi::error_info()->pliWarning
+#define _VL_VPI_INTERNAL    VerilatedVpiError::pliError(vpiInternal, VerilatedVpi::error_info()).setMessage
+#define _VL_VPI_SYSTEM	    VerilatedVpiError::pliError(vpiSystem,   VerilatedVpi::error_info()).setMessage
+#define _VL_VPI_ERROR       VerilatedVpiError::pliError(vpiError,    VerilatedVpi::error_info()).setMessage
+#define _VL_VPI_WARNING     VerilatedVpiError::pliError(vpiWarning,  VerilatedVpi::error_info()).setMessage
+#define _VL_VPI_NOTICE      VerilatedVpiError::pliError(vpiNotice,   VerilatedVpi::error_info()).setMessage
 #define _VL_VPI_ERROR_RESET VerilatedVpi::error_info()->resetError
 
 // Not supported yet
@@ -352,11 +354,12 @@ public:
 #define _VL_VPI_ERROR_SET_ \
         va_list args; \
         va_start(args, message); \
-        vsnprintf(m_buff, sizeof(m_buff), message.c_str(), args); \
+        vsnprintf(vpi->m_buff, sizeof(vpi->m_buff), message.c_str(), args); \
         va_end(args);
 
 class VerilatedVpiError {
     //// Container for vpi error info
+
     t_vpi_error_info m_error_info;
     bool             m_flag;
     char             m_buff[VL_VPI_LINE_SIZE];
@@ -382,38 +385,27 @@ class VerilatedVpiError {
 	}
     }
 public:
+
+    // Class to wrap VerilatedVpiError with severity level
+    class pliError {
+	PLI_INT32          level;
+        VerilatedVpiError* vpi;
+      public :
+        pliError(PLI_INT32 level, VerilatedVpiError* vpi) : level(level), vpi(vpi) {};
+	void setMessage(string file, PLI_INT32 line, string message, ...) {
+	    _VL_VPI_ERROR_SET_
+	    vpi->m_error_info.state = vpiPLI;
+	    vpi->setError(level, (PLI_BYTE8*)vpi->m_buff, (PLI_BYTE8*)file.c_str(), line);
+        }
+        void setMessage(PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line, string message, ...) {
+	    _VL_VPI_ERROR_SET_
+	    vpi->m_error_info.state = vpiPLI;
+	    vpi->setError(level, (PLI_BYTE8*)message.c_str(), code, file, line);
+        }
+    };
+
     VerilatedVpiError() : m_flag(false) {
 	m_error_info.product = (PLI_BYTE8*)Verilated::productName();
-    }
-    void pliWarning(string file, PLI_INT32 line, string message, ...) {
-	_VL_VPI_ERROR_SET_
-	m_error_info.state = vpiPLI;
-	setError(vpiWarning, (PLI_BYTE8*)m_buff, (PLI_BYTE8*)file.c_str(), line);
-    }
-    void pliWarning(PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line, string message, ...) {
-	_VL_VPI_ERROR_SET_
-	m_error_info.state = vpiPLI;
-	setError(vpiWarning, (PLI_BYTE8*)message.c_str(), code, file, line);
-    }
-    void pliError(string file, PLI_INT32 line, string message, ...) {
-	_VL_VPI_ERROR_SET_
-	m_error_info.state = vpiPLI;
-	setError(vpiError, (PLI_BYTE8*)m_buff, (PLI_BYTE8*)file.c_str(), line);
-    }
-    void pliError(PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line, string message, ...) {
-	_VL_VPI_ERROR_SET_
-	m_error_info.state = vpiPLI;
-	setError(vpiError, (PLI_BYTE8*)message.c_str(), code, file, line);
-    }
-    void pliInternal(string file, PLI_INT32 line, string message, ...) {
-	_VL_VPI_ERROR_SET_
-	m_error_info.state = vpiPLI;
-	setError(vpiInternal, (PLI_BYTE8*)m_buff, (PLI_BYTE8*)file.c_str(), line);
-    }
-    void pliInternal(PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line, string message, ...) {
-	_VL_VPI_ERROR_SET_
-	m_error_info.state = vpiPLI;
-	setError(vpiInternal, (PLI_BYTE8*)message.c_str(), code, file, line);
     }
     p_vpi_error_info getError() {
 	if (m_flag) return &m_error_info;
@@ -590,7 +582,7 @@ public:
         if (vpiVal>vpiStmt || vpiVal<vpiCondition) {
             return "*undefined*";
         }
-	return names[vpiVal-];
+	return names[vpiVal-vpiStmt];
     }
     static const char* str_from_vpiCallbackReason(PLI_INT32 vpiVal) {
 	static const char *names[] = {
@@ -722,7 +714,7 @@ VerilatedVpiError* VerilatedVpi::error_info() {
 vpiHandle vpi_register_cb(p_cb_data cb_data_p) {
     _VL_VPI_ERROR_RESET(); // reset vpi error status
     if (VL_UNLIKELY(!cb_data_p)) {
-        _VL_VPI_WARN(__FILE__, __LINE__, "%s : callback data pointer is null", VL_FUNC);
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : callback data pointer is null", VL_FUNC);
         return NULL;
     }
     switch (cb_data_p->reason) {
@@ -750,7 +742,7 @@ vpiHandle vpi_register_cb(p_cb_data cb_data_p) {
 	return vop->castVpiHandle();
     }
     default:
-        _VL_VPI_WARN(__FILE__, __LINE__, "%s : unsupported callback type %s", VL_FUNC, VerilatedVpiError::str_from_vpiCallbackReason(cb_data_p->reason));
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : unsupported callback type %s", VL_FUNC, VerilatedVpiError::str_from_vpiCallbackReason(cb_data_p->reason));
 	return NULL;
     };
 }
@@ -856,7 +848,7 @@ vpiHandle vpi_handle(PLI_INT32 type, vpiHandle object) {
 	}
     }
     default:
-        _VL_VPI_WARN(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiMethod(type));
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiMethod(type));
 	return 0;
     }
 }
@@ -884,7 +876,7 @@ vpiHandle vpi_iterate(PLI_INT32 type, vpiHandle object) {
 		->castVpiHandle());
     }
     default:
-        _VL_VPI_WARN(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiObjType(type));
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiObjType(type));
 	return 0;
     }
 }
@@ -922,7 +914,7 @@ PLI_INT32 vpi_get(PLI_INT32 property, vpiHandle object) {
 	else return 1;
     }
     default:
-        _VL_VPI_WARN(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiProp(property));
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiProp(property));
 	return 0;
     }
 }
@@ -947,7 +939,7 @@ PLI_BYTE8 *vpi_get_str(PLI_INT32 property, vpiHandle object) {
 	return (PLI_BYTE8*)vop->defname();
     }
     default:
-        _VL_VPI_WARN(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiProp(property));
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiProp(property));
 	return 0;
     }
 }
@@ -1030,7 +1022,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		if (bits > VL_MULS_MAX_WORDS*32) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
 		  bits = VL_MULS_MAX_WORDS*32;
-		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, bits);
+		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, bits);
 		}
 		for (i=0; i<bits; i++) {
 		    char val = (datap[i>>3]>>(i&7))&1;
@@ -1058,7 +1050,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		int i;
 		if (chars > sizeof(out)-1) {
 		    // limit maximum size of output to size of buffer to prevent overrun.
-		    _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, chars);
+		    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, chars);
 		    chars = sizeof(out)-1;	
     	        }
 		for (i=0; i<chars; i++) {
@@ -1102,7 +1094,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		if (chars > sizeof(out)-1) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
 		  chars = sizeof(out)-1;
-		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, chars);
+		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, chars);
 		}
 		for (i=0; i<chars; i++) {
 		    char val = (datap[i>>1]>>((i&1)<<2))&15;
@@ -1131,7 +1123,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		if (bytes > VL_MULS_MAX_WORDS*4) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
 		  bytes = VL_MULS_MAX_WORDS*4;
-		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, bytes);
+		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, bytes);
 		}
 		for (i=0; i<bytes; i++) {
 		    char val = datap[bytes-i-1];
@@ -1180,7 +1172,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
     VL_DEBUG_IF_PLI(VL_PRINTF("-vltVpi:  vpi_put_value %p %p\n",object, value_p););
     _VL_VPI_ERROR_RESET(); // reset vpi error status
     if (VL_UNLIKELY(!value_p)) {
-      _VL_VPI_WARN(__FILE__, __LINE__, "Ignoring vpi_put_value with NULL value pointer");
+      _VL_VPI_WARNING(__FILE__, __LINE__, "Ignoring vpi_put_value with NULL value pointer");
       return 0;
     }
     if (VerilatedVpioVar* vop = VerilatedVpioVar::castp(object)) {
@@ -1193,7 +1185,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 	if (VL_UNLIKELY(!vop->varp()->isPublicRW())) {
 	    VL_PRINTF("%%Warning: Ignoring vpi_put_value to signal marked read-only, use public_flat_rw instead: %s\n",
 		      vop->fullname());
-            _VL_VPI_WARN(__FILE__, __LINE__, "Ignoring vpi_put_value to signal marked read-only, use public_flat_rw instead: ", vop->fullname());
+            _VL_VPI_WARNING(__FILE__, __LINE__, "Ignoring vpi_put_value to signal marked read-only, use public_flat_rw instead: ", vop->fullname());
 	    return 0;
 	}
 	if (value_p->format == vpiVectorVal) {
@@ -1294,11 +1286,11 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		return 0;
 	    }
             if (success < 1) {
-		_VL_VPI_WARN(__FILE__, __LINE__, "%s : parsing failed for '%s' as value %s for %s", VL_FUNC, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_WARNING(__FILE__, __LINE__, "%s : parsing failed for '%s' as value %s for %s", VL_FUNC, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
                 return 0;
 	    }
             if (success > 1) {
-		_VL_VPI_WARN(__FILE__, __LINE__, "%s : trailing garbage '%s' in '%s' as value %s for %s", VL_FUNC, remainder, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_WARNING(__FILE__, __LINE__, "%s : trailing garbage '%s' in '%s' as value %s for %s", VL_FUNC, remainder, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
 	    }
             return object;
 	} else if (value_p->format == vpiHexStrVal) {
@@ -1323,7 +1315,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
                         else if (c >= 'a' && c <= 'f') hex = c - 'a' + 10;
                         else if (c >= 'A' && c <= 'F') hex = c - 'A' + 10;
                         else {
-   	        	    _VL_VPI_WARN(__FILE__, __LINE__, "%s : non hex character '%c' in '%s' as value %s for %s", VL_FUNC, c, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+   	        	    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : non hex character '%c' in '%s' as value %s for %s", VL_FUNC, c, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
   		  	    hex = 0;
 			}
 		    } else {
@@ -1516,7 +1508,7 @@ PLI_INT32 vpi_control(PLI_INT32 operation, ...) {
 	return 1;
     }
     }
-    _VL_VPI_WARN(__FILE__, __LINE__, "%s : Unsupported type %s, ignoring", VL_FUNC, VerilatedVpiError::str_from_vpiProp(operation));
+    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, ignoring", VL_FUNC, VerilatedVpiError::str_from_vpiProp(operation));
     return 0;
 }
 
