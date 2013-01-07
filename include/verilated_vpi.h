@@ -855,7 +855,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		if (bits > VL_MULS_MAX_WORDS*32) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
 		  bits = VL_MULS_MAX_WORDS*32;
-		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size VL_MULS_MAX_WORDS is less than required", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, chars);
 		}
 		for (i=0; i<bits; i++) {
 		    char val = (datap[i>>3]>>(i&7))&1;
@@ -883,7 +883,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		int i;
 		if (chars > sizeof(out)-1) {
 		    // limit maximum size of output to size of buffer to prevent overrun.
-		    _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size VL_MULS_MAX_WORDS (%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), chars);
+		    _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, chars);
 		    chars = sizeof(out)-1;	
     	        }
 		for (i=0; i<chars; i++) {
@@ -927,7 +927,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		if (chars > sizeof(out)-1) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
 		  chars = sizeof(out)-1;
-		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size VL_MULS_MAX_WORDS is less than required", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, chars);
 		}
 		for (i=0; i<chars; i++) {
 		    char val = (datap[i>>1]>>((i&1)<<2))&15;
@@ -956,7 +956,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		if (bytes > VL_MULS_MAX_WORDS*4) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
 		  bytes = VL_MULS_MAX_WORDS*4;
-		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size VL_MULS_MAX_WORDS is less than required", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, bytes);
 		}
 		for (i=0; i<bytes; i++) {
 		    char val = datap[bytes-i-1];
