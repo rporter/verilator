@@ -869,6 +869,36 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		return;
 	    }
 	} else if (value_p->format == vpiOctStrVal) {
+	    static VL_THREAD char out[2+(VL_MULS_MAX_WORDS*32)/3];
+	    value_p->value.str = out;
+	    switch (vop->varp()->vltype()) {
+	    case VLVT_UINT8 :
+	    case VLVT_UINT16:
+	    case VLVT_UINT32:
+	    case VLVT_UINT64:
+	    case VLVT_WDATA: {
+		int chars = (vop->varp()->range().bits()+2)/3;
+		int bytes = VL_BYTES_I(vop->varp()->range().bits());
+		CData* datap = ((CData*)(vop->varDatap()));
+		int i;
+		if (chars > sizeof(out)-1) {
+		    // limit maximum size of output to size of buffer to prevent overrun.
+		    _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size VL_MULS_MAX_WORDS (%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), chars);
+		    chars = sizeof(out)-1;	
+    	        }
+		for (i=0; i<chars; i++) {
+                    div_t idx = div(i*3, 8);
+		    int val = ((((idx.quot+1)<bytes)?datap[idx.quot+1]<<8:0)|datap[idx.quot])>>(idx.rem);
+		    out[chars-i-1] = '0' + (val&7);
+		}
+		out[i]=0; // NULL terminate
+		return;
+	    }
+	    default:
+                strcpy(out, "0");
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		return;
+	    }
 	} else if (value_p->format == vpiDecStrVal) {
 	    static VL_THREAD char out[1+VL_MULS_MAX_WORDS*32];
 	    value_p->value.str = out;
@@ -891,7 +921,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 	    case VLVT_UINT32:
 	    case VLVT_UINT64:
 	    case VLVT_WDATA: {
-		int chars = vop->varp()->range().bits() >> 2;
+		int chars = (vop->varp()->range().bits()+3)>>2;
 		CData* datap = ((CData*)(vop->varDatap()));
 		int i;
 		if (chars > sizeof(out)-1) {
@@ -1047,6 +1077,34 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		return 0;
 	    }
 	} else if (value_p->format == vpiOctStrVal) {
+	    switch (vop->varp()->vltype()) {
+	    case VLVT_UINT8 :
+	    case VLVT_UINT16:
+	    case VLVT_UINT32:
+	    case VLVT_UINT64:
+	    case VLVT_WDATA: {
+		int chars = (vop->varp()->range().bits()+2)/3;
+		int len	 = strlen(value_p->value.str);
+		CData* datap = ((CData*)(vop->varDatap()));
+                datap[0] = 0; // reset zero'th byte
+		for (int i=0; i<chars; i++) {
+                    union {
+			char  byte[2];
+                        short half;
+		    } val;
+                    div_t idx = div(i*3, 8);
+                    val.half = ((i < len)?(value_p->value.str[len-i-1]-'0'):0)<<idx.rem;
+                    datap[idx.quot] |= val.byte[0];
+                    if (idx.quot < chars) {
+		        datap[idx.quot+1] = val.byte[1]; // this also resets all bits to 0 prior to or'ing above
+		    }
+		}
+		return object;
+	    }
+	    default:
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		return 0;
+  	    }
 	} else if (value_p->format == vpiDecStrVal) {
             char remainder[16];
             int success;
