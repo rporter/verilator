@@ -37,13 +37,14 @@
 //======================================================================
 // Internal macros
 
-#define _VL_VPI_ERROR VerilatedVpi::error_info()->pliError
-#define _VL_VPI_WARN  VerilatedVpi::error_info()->pliWarning
+#define _VL_VPI_INTERNAL    VerilatedVpi::error_info()->pliInternal
+#define _VL_VPI_ERROR       VerilatedVpi::error_info()->pliError
+#define _VL_VPI_WARN        VerilatedVpi::error_info()->pliWarning
 #define _VL_VPI_ERROR_RESET VerilatedVpi::error_info()->resetError
 
 // Not supported yet
 #define _VL_VPI_UNIMP() \
-    vl_fatal(__FILE__,__LINE__,"",Verilated::catName("Unsupported VPI function: ",VL_FUNC));
+    _VL_VPI_ERROR(__FILE__,__LINE__,Verilated::catName("Unsupported VPI function: ",VL_FUNC));
 
 //======================================================================
 // Implementation
@@ -404,6 +405,16 @@ public:
 	m_error_info.state = vpiPLI;
 	setError(vpiError, (PLI_BYTE8*)message.c_str(), code, file, line);
     }
+    void pliInternal(string file, PLI_INT32 line, string message, ...) {
+	_VL_VPI_ERROR_SET_
+	m_error_info.state = vpiPLI;
+	setError(vpiInternal, (PLI_BYTE8*)m_buff, (PLI_BYTE8*)file.c_str(), line);
+    }
+    void pliInternal(PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line, string message, ...) {
+	_VL_VPI_ERROR_SET_
+	m_error_info.state = vpiPLI;
+	setError(vpiInternal, (PLI_BYTE8*)message.c_str(), code, file, line);
+    }
     p_vpi_error_info getError() {
 	if (m_flag) return &m_error_info;
 	return NULL;
@@ -539,6 +550,164 @@ public:
 	};
 	return names[(vpiVal<sizeof(names))?vpiVal:0];
     }
+    static const char* str_from_vpiMethod(PLI_INT32 vpiVal) {
+	static const char *names[] = {
+	    "vpiCondition",
+	    "vpiDelay",
+	    "vpiElseStmt",
+	    "vpiForIncStmt",
+	    "vpiForInitStmt",
+	    "vpiHighConn",
+	    "vpiLhs",
+	    "vpiIndex",
+	    "vpiLeftRange",
+	    "vpiLowConn",
+	    "vpiParent",
+	    "vpiRhs",
+	    "vpiRightRange",
+	    "vpiScope",
+	    "vpiSysTfCall",
+	    "vpiTchkDataTerm",
+	    "vpiTchkNotifier",
+	    "vpiTchkRefTerm",
+	    "vpiArgument",
+	    "vpiBit",
+	    "vpiDriver",
+	    "vpiInternalScope",
+	    "vpiLoad",
+	    "vpiModDataPathIn",
+	    "vpiModPathIn",
+	    "vpiModPathOut",
+	    "vpiOperand",
+	    "vpiPortInst",
+	    "vpiProcess",
+	    "vpiVariables",
+	    "vpiUse",
+	    "vpiExpr",
+	    "vpiPrimitive",
+	    "vpiStmt"
+ 	};
+        if (vpiVal>vpiStmt || vpiVal<vpiCondition) {
+            return "*undefined*";
+        }
+	return names[vpiVal-];
+    }
+    static const char* str_from_vpiCallbackReason(PLI_INT32 vpiVal) {
+	static const char *names[] = {
+	    "*undefined*",
+  	    "cbValueChange",
+	    "cbStmt",
+	    "cbForce",
+	    "cbRelease",
+	    "cbAtStartOfSimTime",
+	    "cbReadWriteSynch",
+	    "cbReadOnlySynch",
+	    "cbNextSimTime",
+	    "cbAfterDelay",
+	    "cbEndOfCompile",
+	    "cbStartOfSimulation",
+	    "cbEndOfSimulation",
+	    "cbError",
+	    "cbTchkViolation",
+	    "cbStartOfSave",
+	    "cbEndOfSave",
+	    "cbStartOfRestart",
+	    "cbEndOfRestart",
+	    "cbStartOfReset",
+	    "cbEndOfReset",
+	    "cbEnterInteractive",
+	    "cbExitInteractive",
+	    "cbInteractiveScopeChange",
+	    "cbUnresolvedSystf",
+	    "cbAssign",
+	    "cbDeassign",
+	    "cbDisable",
+	    "cbPLIError",
+	    "cbSignal",
+	    "cbNBASynch",
+	    "cbAtEndOfSimTime"
+        };
+	return names[(vpiVal<sizeof(names))?vpiVal:0];
+    }
+    static const char* str_from_vpiProp(PLI_INT32 vpiVal) {
+	static const char *names[] = {
+	    "*undefined or other*",
+            "vpiType",
+	    "vpiName",
+	    "vpiFullName",
+	    "vpiSize",
+	    "vpiFile",
+	    "vpiLineNo",
+	    "vpiTopModule",
+	    "vpiCellInstance",
+	    "vpiDefName",
+	    "vpiProtected",
+	    "vpiTimeUnit",
+	    "vpiTimePrecision",
+	    "vpiDefNetType",
+	    "vpiUnconnDrive",
+	    "vpiDefFile",
+	    "vpiDefLineNo",
+	    "vpiScalar",
+	    "vpiVector",
+	    "vpiExplicitName",
+	    "vpiDirection",
+	    "vpiConnByName",
+	    "vpiNetType",
+	    "vpiExplicitScalared",
+	    "vpiExplicitVectored",
+	    "vpiExpanded",
+	    "vpiImplicitDecl",
+	    "vpiChargeStrength",
+	    "vpiArray",
+	    "vpiPortIndex",
+	    "vpiTermIndex",
+	    "vpiStrength0",
+	    "vpiStrength1",
+	    "vpiPrimType",
+	    "vpiPolarity",
+	    "vpiDataPolarity",
+	    "vpiEdge",
+	    "vpiPathType",
+	    "vpiTchkType",
+	    "vpiOpType",
+	    "vpiConstType",
+	    "vpiBlocking",
+	    "vpiCaseType",
+	    "vpiFuncType",
+	    "vpiUserDefn",
+	    "vpiScheduled",
+	    "vpiActive",
+	    "vpiAutomatic",
+	    "vpiCell",
+	    "vpiConfig",
+	    "vpiConstantSelect",
+	    "vpiDecompile",
+	    "vpiDefAttribute",
+	    "vpiDelayType",
+	    "vpiIteratorType",
+	    "vpiLibrary",
+	    "vpiOffset",
+	    "vpiResolvedNetType",
+	    "vpiSaveRestartID",
+	    "vpiSaveRestartLocation",
+	    "vpiValid",
+	    "vpiSigned",
+	    "vpiStop",
+	    "vpiFinish",
+	    "vpiReset",
+	    "vpiSetInteractiveScope",
+	    "vpiLocalParam",
+	    "vpiModPathHasIfNone",
+	    "vpiIndexedPartSelectType",
+	    "vpiIsMemory",
+	    "vpiIsProtected"
+        };
+        if (vpiVal == vpiUndefined) { 
+          return "vpiUndefined";
+        }
+	return names[(vpiVal<sizeof(names))?vpiVal:0];
+    }
 };
 
 VerilatedVpiError* VerilatedVpi::error_info() {
@@ -551,7 +720,11 @@ VerilatedVpiError* VerilatedVpi::error_info() {
 // callback related
 
 vpiHandle vpi_register_cb(p_cb_data cb_data_p) {
-    if (VL_UNLIKELY(!cb_data_p)) return NULL;
+    _VL_VPI_ERROR_RESET(); // reset vpi error status
+    if (VL_UNLIKELY(!cb_data_p)) {
+        _VL_VPI_WARN(__FILE__, __LINE__, "%s : callback data pointer is null", VL_FUNC);
+        return NULL;
+    }
     switch (cb_data_p->reason) {
     case cbAfterDelay: {
 	QData time = 0;
@@ -577,7 +750,8 @@ vpiHandle vpi_register_cb(p_cb_data cb_data_p) {
 	return vop->castVpiHandle();
     }
     default:
-	_VL_VPI_UNIMP(); return NULL;
+        _VL_VPI_WARN(__FILE__, __LINE__, "%s : unsupported callback type %s", VL_FUNC, VerilatedVpiError::str_from_vpiCallbackReason(cb_data_p->reason));
+	return NULL;
     };
 }
 
@@ -655,7 +829,8 @@ vpiHandle vpi_handle_by_index(vpiHandle object, PLI_INT32 indx) {
 		->castVpiHandle();
 	}
     } else {
-	_VL_VPI_UNIMP(); return 0;
+	_VL_VPI_INTERNAL(__FILE__, __LINE__, "%s : can't resolve handle", VL_FUNC);
+        return 0;
     }
 }
 
@@ -681,7 +856,7 @@ vpiHandle vpi_handle(PLI_INT32 type, vpiHandle object) {
 	}
     }
     default:
-	_VL_VPI_UNIMP();
+        _VL_VPI_WARN(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiMethod(type));
 	return 0;
     }
 }
@@ -747,13 +922,13 @@ PLI_INT32 vpi_get(PLI_INT32 property, vpiHandle object) {
 	else return 1;
     }
     default:
-	_VL_VPI_UNIMP();
+        _VL_VPI_WARN(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiProp(property));
 	return 0;
     }
 }
 
 PLI_INT64 vpi_get64(PLI_INT32 property, vpiHandle object) {
-     _VL_VPI_ERROR(__FILE__, __LINE__, "%s : currently unimplemented", VL_FUNC);
+    _VL_VPI_UNIMP();
     return 0;
 }
 
@@ -772,7 +947,7 @@ PLI_BYTE8 *vpi_get_str(PLI_INT32 property, vpiHandle object) {
 	return (PLI_BYTE8*)vop->defname();
     }
     default:
-	_VL_VPI_UNIMP();
+        _VL_VPI_WARN(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiProp(property));
 	return 0;
     }
 }
@@ -780,11 +955,11 @@ PLI_BYTE8 *vpi_get_str(PLI_INT32 property, vpiHandle object) {
 // delay processing
 
 void vpi_get_delays(vpiHandle object, p_vpi_delay delay_p) {
-    _VL_VPI_ERROR(__FILE__, __LINE__, "%s : currently unimplemented", VL_FUNC);
+    _VL_VPI_UNIMP();
     return;
 }
 void vpi_put_delays(vpiHandle object, p_vpi_delay delay_p) {
-    _VL_VPI_ERROR(__FILE__, __LINE__, "%s : currently unimplemented", VL_FUNC);
+    _VL_VPI_UNIMP();
     return;
 }
 
@@ -855,7 +1030,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		if (bits > VL_MULS_MAX_WORDS*32) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
 		  bits = VL_MULS_MAX_WORDS*32;
-		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, chars);
+		  _VL_VPI_WARN(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, bits);
 		}
 		for (i=0; i<bits; i++) {
 		    char val = (datap[i>>3]>>(i&7))&1;
@@ -1341,7 +1516,8 @@ PLI_INT32 vpi_control(PLI_INT32 operation, ...) {
 	return 1;
     }
     }
-    _VL_VPI_UNIMP(); return 0;
+    _VL_VPI_WARN(__FILE__, __LINE__, "%s : Unsupported type %s, ignoring", VL_FUNC, VerilatedVpiError::str_from_vpiProp(operation));
+    return 0;
 }
 
 vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index, PLI_INT32 *index_array) {
