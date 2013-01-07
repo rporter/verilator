@@ -37,11 +37,11 @@
 //======================================================================
 // Internal macros
 
-#define _VL_VPI_INTERNAL    VerilatedVpiError::pliError(vpiInternal, VerilatedVpi::error_info()).setMessage
-#define _VL_VPI_SYSTEM	    VerilatedVpiError::pliError(vpiSystem,   VerilatedVpi::error_info()).setMessage
-#define _VL_VPI_ERROR       VerilatedVpiError::pliError(vpiError,    VerilatedVpi::error_info()).setMessage
-#define _VL_VPI_WARNING     VerilatedVpiError::pliError(vpiWarning,  VerilatedVpi::error_info()).setMessage
-#define _VL_VPI_NOTICE      VerilatedVpiError::pliError(vpiNotice,   VerilatedVpi::error_info()).setMessage
+#define _VL_VPI_INTERNAL    VerilatedVpi::error_info()->setMessage(vpiInternal)->setMessage
+#define _VL_VPI_SYSTEM	    VerilatedVpi::error_info()->setMessage(vpiSystem  )->setMessage
+#define _VL_VPI_ERROR       VerilatedVpi::error_info()->setMessage(vpiError   )->setMessage
+#define _VL_VPI_WARNING     VerilatedVpi::error_info()->setMessage(vpiWarning )->setMessage
+#define _VL_VPI_NOTICE      VerilatedVpi::error_info()->setMessage(vpiNotice  )->setMessage
 #define _VL_VPI_ERROR_RESET VerilatedVpi::error_info()->resetError
 
 // Not supported yet
@@ -354,7 +354,7 @@ public:
 #define _VL_VPI_ERROR_SET_ \
         va_list args; \
         va_start(args, message); \
-        vsnprintf(vpi->m_buff, sizeof(vpi->m_buff), message.c_str(), args); \
+        vsnprintf(m_buff, sizeof(m_buff), message.c_str(), args); \
         va_end(args);
 
 class VerilatedVpiError {
@@ -363,17 +363,15 @@ class VerilatedVpiError {
     t_vpi_error_info m_error_info;
     bool             m_flag;
     char             m_buff[VL_VPI_LINE_SIZE];
-    void setError(PLI_INT32 level, PLI_BYTE8 *message, PLI_BYTE8 *file, PLI_INT32 line) {
-	m_flag=true;
-	m_error_info.level = level;
+    void setError(PLI_BYTE8 *message, PLI_BYTE8 *file, PLI_INT32 line) {
 	m_error_info.message = message;
 	m_error_info.file = file;
 	m_error_info.line = line;
 	m_error_info.code = NULL;
 	do_callbacks();
     }
-    void setError(PLI_INT32 level, PLI_BYTE8 *message, PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line) {
-	setError(level, message, file, line);
+    void setError(PLI_BYTE8 *message, PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line) {
+	setError( message, file, line);
 	m_error_info.code = code;
 	do_callbacks();
     }
@@ -386,24 +384,21 @@ class VerilatedVpiError {
     }
 public:
 
-    // Class to wrap VerilatedVpiError with severity level
-    class pliError {
-	PLI_INT32          level;
-        VerilatedVpiError* vpi;
-      public :
-        pliError(PLI_INT32 level, VerilatedVpiError* vpi) : level(level), vpi(vpi) {};
-	void setMessage(string file, PLI_INT32 line, string message, ...) {
-	    _VL_VPI_ERROR_SET_
-	    vpi->m_error_info.state = vpiPLI;
-	    vpi->setError(level, (PLI_BYTE8*)vpi->m_buff, (PLI_BYTE8*)file.c_str(), line);
-        }
-        void setMessage(PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line, string message, ...) {
-	    _VL_VPI_ERROR_SET_
-	    vpi->m_error_info.state = vpiPLI;
-	    vpi->setError(level, (PLI_BYTE8*)message.c_str(), code, file, line);
-        }
-    };
-
+    VerilatedVpiError* setMessage(PLI_INT32 level) {
+	m_flag=true;
+	m_error_info.level = level;
+        return this;
+    }
+    void setMessage(string file, PLI_INT32 line, string message, ...) {
+        _VL_VPI_ERROR_SET_
+        m_error_info.state = vpiPLI;
+        setError((PLI_BYTE8*)m_buff, (PLI_BYTE8*)file.c_str(), line);
+    }
+    void setMessage(PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line, string message, ...) {
+        _VL_VPI_ERROR_SET_
+        m_error_info.state = vpiPLI;
+        setError((PLI_BYTE8*)message.c_str(), code, file, line);
+    }
     VerilatedVpiError() : m_flag(false) {
 	m_error_info.product = (PLI_BYTE8*)Verilated::productName();
     }
