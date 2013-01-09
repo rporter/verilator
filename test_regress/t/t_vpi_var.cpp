@@ -391,6 +391,20 @@ int _mon_check_string() {
     return 0;
 }
 
+int _mon_check_vlog_info() {
+    s_vpi_vlog_info vlog_info;
+    PLI_INT32 rtn = vpi_get_vlog_info(&vlog_info);
+    CHECK_RESULT(rtn, 1);
+    CHECK_RESULT(vlog_info.argc, 4);
+    CHECK_RESULT_CSTR(vlog_info.argv[1], "+PLUS");
+    CHECK_RESULT_CSTR(vlog_info.argv[2], "+INT=1234");
+    CHECK_RESULT_CSTR(vlog_info.argv[3], "+STRSTR");
+    CHECK_RESULT_CSTR(vlog_info.product, "Verilator");
+    CHECK_RESULT(strlen(vlog_info.version) > 0, 1);
+
+    return 0;
+}
+
 int mon_check() {
     // Callback from initial block in monitor
     if (int status = _mon_check_mcd()) return status;
@@ -401,6 +415,7 @@ int mon_check() {
     if (int status = _mon_check_getput()) return status;
     if (int status = _mon_check_quad()) return status;
     if (int status = _mon_check_string()) return status;
+    if (int status = _mon_check_vlog_info()) return status;
     return 0; // Ok
 }
 
