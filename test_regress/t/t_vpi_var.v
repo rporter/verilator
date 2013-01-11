@@ -81,9 +81,32 @@ extern "C" int mon_check();
       end
    end
 
+   genvar i;
+   generate
+   for (i=1;i<=128;i++) begin : arr
+     arr #(.LENGTH(i)) arr();
+   end endgenerate
+   
 endmodule
 
 module sub;
    reg subsig1 /*verilator public_flat_rd*/;
    reg subsig2 /*verilator public_flat_rd*/;
 endmodule
+
+module arr;
+   
+   parameter LENGTH = 1;
+
+   reg [LENGTH-1:0] sig /*verilator public_flat_rw*/;
+   reg [LENGTH-1:0] rfr /*verilator public_flat_rw*/;
+
+   reg 		  check /*verilator public_flat_rw*/;
+   reg          verbose /*verilator public_flat_rw*/;
+
+   always @(posedge check) begin
+     if (verbose) $display("%m : %x %x", sig, rfr);
+     if (check && sig != rfr) $stop;
+   end
+
+endmodule : arr

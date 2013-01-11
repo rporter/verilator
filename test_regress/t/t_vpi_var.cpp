@@ -32,6 +32,7 @@ unsigned int main_time = false;
 unsigned int callback_count = false;
 unsigned int callback_count_half = false;
 unsigned int callback_count_quad = false;
+unsigned int callback_count_strs = false;
 
 //======================================================================
 
@@ -391,6 +392,110 @@ int _mon_check_string() {
     return 0;
 }
 
+int _mon_check_putget_str(p_cb_data cb_data) {
+    static struct {
+	vpiHandle scope, sig, rfr, check, verbose;
+        char str[128+1];          // char per bit plus null terminator
+        int type;                 // value type in .str
+        union {
+          PLI_INT32    integer;
+          s_vpi_vecval vector[4];
+	} value;                 // reference
+
+    } data[129];
+    if (cb_data) {
+	// this is the callback
+        static unsigned int seed = 1;
+        s_vpi_time t;
+        t.type = vpiSimTime;
+        t.high = 0;
+        t.low = 0;
+        for (int i=2; i<=12/*63*/; i++) {
+  	  static s_vpi_value v;
+	  printf("========== %d ==========\n", i);
+          if (callback_count_strs) {
+	      // check persistance
+              if (data[i].type) {
+                  v.format = data[i].type;
+	      } else {
+		  static PLI_INT32 vals[] = {vpiBinStrVal, vpiOctStrVal, vpiDecStrVal, vpiHexStrVal, /*vpiStringVal*/vpiBinStrVal};
+                  v.format = vals[rand_r(&seed) % 5];
+	  	  printf("new format %d\n", v.format);
+	      }
+              vpi_get_value(data[i].sig, &v);
+	      printf("%s\n", v.value.str);
+              if (data[i].type) {
+                  CHECK_RESULT_CSTR(v.value.str, data[i].str);
+	      } else {
+                  data[i].type = v.format;
+                  strcpy(data[i].str, v.value.str);
+	      }
+	  }
+
+          // check for corruption
+          v.format = i<32?vpiIntVal:vpiVectorVal;
+          vpi_get_value(data[i].sig, &v);
+          if (v.format == vpiIntVal) {
+              CHECK_RESULT(v.value.integer, data[i].value.integer);
+	  } else {
+            for (int k=0; k < i>>3; k++) {
+              CHECK_RESULT(v.value.vector[k].aval, data[i].value.vector[k].aval);
+  	    }
+  	  }
+
+          if (callback_count_strs & 7) {
+              // put same value back - checking encoding/decoding equivalent
+              v.format = data[i].type;
+              v.value.str = data[i].str;
+              vpi_put_value(data[i].sig, &v, &t, vpiNoDelay);
+	  } else {
+              // stick a new random value in
+              if (i<32) {
+                  v.value.integer = rand_r(&seed);
+                  data[i].value.integer = v.value.integer & ((1UL<<i)-1UL);
+                  v.format = vpiIntVal;
+   	          printf("new value %d\n", data[i].value.integer);
+	      } else {
+  	          for (int j=0; j<4; j++) {
+                      data[i].value.vector[j].aval = rand_r(&seed);
+  	          }
+                  v.value.vector = data[i].value.vector;
+                  v.format = vpiVectorVal;
+	      }
+              vpi_put_value(data[i].sig, &v, &t, vpiNoDelay);
+	  }
+          if ((callback_count_strs & 1) == 0) data[i].type = 0;
+	}
+        callback_count_strs++;
+    } else {
+	// setup and install
+        for (int i=1; i<=128; i++) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "t.arr[%d].arr", i);
+	    CHECK_RESULT_NZ(data[i].scope   = vpi_handle_by_name((PLI_BYTE8*)buf, NULL));
+	    CHECK_RESULT_NZ(data[i].sig     = vpi_handle_by_name((PLI_BYTE8*)"sig", data[i].scope));
+	    CHECK_RESULT_NZ(data[i].rfr     = vpi_handle_by_name((PLI_BYTE8*)"rfr", data[i].scope));
+	    CHECK_RESULT_NZ(data[i].check   = vpi_handle_by_name((PLI_BYTE8*)"check", data[i].scope));
+	    CHECK_RESULT_NZ(data[i].verbose = vpi_handle_by_name((PLI_BYTE8*)"verbose", data[i].scope));
+	}
+
+	static t_cb_data cb_data;
+	static s_vpi_value v;
+        vpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.count", NULL);
+
+        cb_data.reason = cbValueChange;
+        cb_data.cb_rtn = _mon_check_putget_str; // this function
+        cb_data.obj = vh1;
+        cb_data.value = &v;
+        v.format = vpiIntVal;
+     
+        vpiHandle vh = vpi_register_cb(&cb_data);
+        CHECK_RESULT_NZ(vh);
+        
+        return 0;
+    }
+}
+
 int _mon_check_vlog_info() {
     s_vpi_vlog_info vlog_info;
     PLI_INT32 rtn = vpi_get_vlog_info(&vlog_info);
@@ -415,6 +520,7 @@ int mon_check() {
     if (int status = _mon_check_getput()) return status;
     if (int status = _mon_check_quad()) return status;
     if (int status = _mon_check_string()) return status;
+    if (int status = _mon_check_putget_str(NULL)) return status;
     if (int status = _mon_check_vlog_info()) return status;
     return 0; // Ok
 }
@@ -463,6 +569,7 @@ int main(int argc, char **argv, char **env) {
     CHECK_RESULT(callback_count, 501);
     CHECK_RESULT(callback_count_half, 250);
     CHECK_RESULT(callback_count_quad, 2);
+    CHECK_RESULT(callback_count_strs, 512);
     if (!Verilated::gotFinish()) {
 	vl_fatal(FILENM,__LINE__,"main", "%Error: Timeout; never got a $finish");
     }
