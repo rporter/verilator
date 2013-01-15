@@ -28,11 +28,14 @@
 // __FILE__ is too long
 #define FILENM "t_vpi_var.cpp"
 
+#define DEBUG if (0) printf
+
 unsigned int main_time = false;
 unsigned int callback_count = false;
 unsigned int callback_count_half = false;
 unsigned int callback_count_quad = false;
 unsigned int callback_count_strs = false;
+unsigned int callback_count_strs_max = 500;
 
 //======================================================================
 
@@ -73,7 +76,7 @@ public:
 
 #define CHECK_RESULT_HEX(got, exp) \
     if ((got != exp)) { \
-	cout<<hex<<"%Error: "<<FILENM<<":"<<__LINE__ \
+	cout<<dec<<"%Error: "<<FILENM<<":"<<__LINE__<<hex \
 	   <<": GOT = "<<(got)<<"   EXP = "<<(exp)<<endl;	\
 	return __LINE__; \
     }
@@ -393,6 +396,7 @@ int _mon_check_string() {
 }
 
 int _mon_check_putget_str(p_cb_data cb_data) {
+    static vpiHandle cb;
     static struct {
 	vpiHandle scope, sig, rfr, check, verbose;
         char str[128+1];          // char per bit plus null terminator
@@ -401,7 +405,6 @@ int _mon_check_putget_str(p_cb_data cb_data) {
           PLI_INT32    integer;
           s_vpi_vecval vector[4];
 	} value;                 // reference
-
     } data[129];
     if (cb_data) {
 	// this is the callback
@@ -410,20 +413,20 @@ int _mon_check_putget_str(p_cb_data cb_data) {
         t.type = vpiSimTime;
         t.high = 0;
         t.low = 0;
-        for (int i=2; i<=12/*63*/; i++) {
+        for (int i=2; i<=63; i++) {
   	  static s_vpi_value v;
-	  printf("========== %d ==========\n", i);
+	  DEBUG("========== %d ==========\n", i);
           if (callback_count_strs) {
 	      // check persistance
               if (data[i].type) {
                   v.format = data[i].type;
 	      } else {
-		  static PLI_INT32 vals[] = {vpiBinStrVal, vpiOctStrVal, vpiDecStrVal, vpiHexStrVal, /*vpiStringVal*/vpiBinStrVal};
-                  v.format = vals[rand_r(&seed) % 5];
-	  	  printf("new format %d\n", v.format);
+		  static PLI_INT32 vals[] = {vpiBinStrVal, vpiOctStrVal, vpiDecStrVal, vpiHexStrVal};
+                  v.format = vals[rand_r(&seed) % 4];
+	  	  DEBUG("new format %d\n", v.format);
 	      }
               vpi_get_value(data[i].sig, &v);
-	      printf("%s\n", v.value.str);
+	      DEBUG("%s\n", v.value.str);
               if (data[i].type) {
                   CHECK_RESULT_CSTR(v.value.str, data[i].str);
 	      } else {
@@ -433,14 +436,15 @@ int _mon_check_putget_str(p_cb_data cb_data) {
 	  }
 
           // check for corruption
-          v.format = i<32?vpiIntVal:vpiVectorVal;
+          v.format = i<=32?vpiIntVal:vpiVectorVal;
           vpi_get_value(data[i].sig, &v);
           if (v.format == vpiIntVal) {
               CHECK_RESULT(v.value.integer, data[i].value.integer);
 	  } else {
-            for (int k=0; k < i>>3; k++) {
-              CHECK_RESULT(v.value.vector[k].aval, data[i].value.vector[k].aval);
-  	    }
+              for (int k=0; k <= (i>>5); k++) {
+  	          DEBUG("%d %08x %08x\n", k, v.value.vector[k].aval, data[i].value.vector[k].aval);
+                  CHECK_RESULT_HEX(v.value.vector[k].aval, data[i].value.vector[k].aval);
+  	      }
   	  }
 
           if (callback_count_strs & 7) {
@@ -450,14 +454,18 @@ int _mon_check_putget_str(p_cb_data cb_data) {
               vpi_put_value(data[i].sig, &v, &t, vpiNoDelay);
 	  } else {
               // stick a new random value in
-              if (i<32) {
+              if (i<=32) {
                   v.value.integer = rand_r(&seed);
                   data[i].value.integer = v.value.integer & ((1UL<<i)-1UL);
                   v.format = vpiIntVal;
-   	          printf("new value %d\n", data[i].value.integer);
+   	          DEBUG("new value %d\n", data[i].value.integer);
 	      } else {
   	          for (int j=0; j<4; j++) {
+                      int words = i>>5;
                       data[i].value.vector[j].aval = rand_r(&seed);
+                      if (j==words) {
+			  data[i].value.vector[j].aval &= (1<<(i&31))-1;
+		      }
   	          }
                   v.value.vector = data[i].value.vector;
                   v.format = vpiVectorVal;
@@ -466,7 +474,10 @@ int _mon_check_putget_str(p_cb_data cb_data) {
 	  }
           if ((callback_count_strs & 1) == 0) data[i].type = 0;
 	}
-        callback_count_strs++;
+        if (++callback_count_strs == callback_count_strs_max) {
+          int success = vpi_remove_cb(cb);
+          CHECK_RESULT_NZ(success);
+	};
     } else {
 	// setup and install
         for (int i=1; i<=128; i++) {
@@ -488,10 +499,10 @@ int _mon_check_putget_str(p_cb_data cb_data) {
         cb_data.obj = vh1;
         cb_data.value = &v;
         v.format = vpiIntVal;
-     
-        vpiHandle vh = vpi_register_cb(&cb_data);
-        CHECK_RESULT_NZ(vh);
-        
+
+        cb = vpi_register_cb(&cb_data);
+        CHECK_RESULT_NZ(cb);
+
         return 0;
     }
 }
@@ -569,7 +580,7 @@ int main(int argc, char **argv, char **env) {
     CHECK_RESULT(callback_count, 501);
     CHECK_RESULT(callback_count_half, 250);
     CHECK_RESULT(callback_count_quad, 2);
-    CHECK_RESULT(callback_count_strs, 512);
+    CHECK_RESULT(callback_count_strs, callback_count_strs_max);
     if (!Verilated::gotFinish()) {
 	vl_fatal(FILENM,__LINE__,"main", "%Error: Timeout; never got a $finish");
     }

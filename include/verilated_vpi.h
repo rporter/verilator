@@ -1061,6 +1061,13 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		for (i=0; i<chars; i++) {
                     div_t idx = div(i*3, 8);
 		    int val = ((((idx.quot+1)<bytes)?datap[idx.quot+1]<<8:0)|datap[idx.quot])>>(idx.rem);
+                    if (i==(chars-1)) {
+			// last one, mask off non existant bits
+			unsigned int rem = vop->varp()->range().bits() % 3;
+                        if (rem) {
+                          val &= (1<<rem)-1;
+			}
+		    }
 		    out[chars-i-1] = '0' + (val&7);
 		}
 		out[i]=0; // NULL terminate
@@ -1104,6 +1111,12 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		for (i=0; i<chars; i++) {
 		    char val = (datap[i>>1]>>((i&1)<<2))&15;
                     static char hex[] = "0123456789abcdef";
+                    if (i==(chars-1)) {
+			unsigned int rem = vop->varp()->range().bits() & 3;
+                        if (rem) {
+                          val &= (1<<rem)-1;
+			}
+		    }
 		    out[chars-i-1] = hex[val];
 		}
 		out[i]=0; // NULL terminate
@@ -1306,7 +1319,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 	    case VLVT_UINT32:
 	    case VLVT_UINT64:
 	    case VLVT_WDATA: {
-		int chars = vop->varp()->range().bits() >> 2;
+		int chars = (vop->varp()->range().bits()+3)>>2;
 		CData* datap = ((CData*)(vop->varDatap()));
                 char* val = value_p->value.str;
                 if (val[0] == '0' && (val[1] == 'x' || val[1] == 'X')) {
