@@ -452,6 +452,10 @@ int _mon_check_putget_str(p_cb_data cb_data) {
               v.format = data[i].type;
               v.value.str = data[i].str;
               vpi_put_value(data[i].sig, &v, &t, vpiNoDelay);
+              v.format = vpiIntVal;
+              v.value.integer = 1;
+              //vpi_put_value(data[i].verbose, &v, &t, vpiNoDelay);
+              vpi_put_value(data[i].check, &v, &t, vpiNoDelay);
 	  } else {
               // stick a new random value in
               if (i<=32) {
@@ -471,6 +475,7 @@ int _mon_check_putget_str(p_cb_data cb_data) {
                   v.format = vpiVectorVal;
 	      }
               vpi_put_value(data[i].sig, &v, &t, vpiNoDelay);
+              vpi_put_value(data[i].rfr, &v, &t, vpiNoDelay);
 	  }
           if ((callback_count_strs & 1) == 0) data[i].type = 0;
 	}

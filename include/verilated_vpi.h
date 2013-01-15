@@ -1215,8 +1215,6 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 			VL_PRINTF("-vltVpi:    varp=%p  putatp=%p\n",
 				  vop->varp()->datap(), vop->varDatap()););
 	if (VL_UNLIKELY(!vop->varp()->isPublicRW())) {
-	    VL_PRINTF("%%Warning: Ignoring vpi_put_value to signal marked read-only, use public_flat_rw instead: %s\n",
-		      vop->fullname());
             _VL_VPI_WARNING(__FILE__, __LINE__, "Ignoring vpi_put_value to signal marked read-only, use public_flat_rw instead: ", vop->fullname());
 	    return 0;
 	}
@@ -1285,6 +1283,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 	    case VLVT_UINT64:
 	    case VLVT_WDATA: {
 		int chars = (vop->varp()->range().bits()+2)/3;
+		int bytes = VL_BYTES_I(vop->varp()->range().bits());
 		int len	 = strlen(value_p->value.str);
 		CData* datap = ((CData*)(vop->varDatap()));
                 datap[0] = 0; // reset zero'th byte
@@ -1313,7 +1312,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
                     // byte of the destination.
                     val.half <<= idx.rem;
                     datap[idx.quot] |= val.byte[0]; // or in value
-                    if (idx.quot < chars) {
+                    if ((idx.quot+1) < bytes) {
 		        datap[idx.quot+1] = val.byte[1]; // this also resets all bits to 0 prior to or'ing above
 		    }
 		}
