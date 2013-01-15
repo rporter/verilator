@@ -396,9 +396,9 @@ int _mon_check_string() {
 }
 
 int _mon_check_putget_str(p_cb_data cb_data) {
-    static vpiHandle cb;
+    static VlVpiHandle cb;
     static struct {
-	vpiHandle scope, sig, rfr, check, verbose;
+	VlVpiHandle scope, sig, rfr, check, verbose;
         char str[128+1];          // char per bit plus null terminator
         int type;                 // value type in .str
         union {
@@ -497,11 +497,11 @@ int _mon_check_putget_str(p_cb_data cb_data) {
 
 	static t_cb_data cb_data;
 	static s_vpi_value v;
-        vpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.count", NULL);
+        static VlVpiHandle count_h = vpi_handle_by_name((PLI_BYTE8*)"t.count", NULL);
 
         cb_data.reason = cbValueChange;
         cb_data.cb_rtn = _mon_check_putget_str; // this function
-        cb_data.obj = vh1;
+        cb_data.obj = count_h;
         cb_data.value = &v;
         v.format = vpiIntVal;
 
