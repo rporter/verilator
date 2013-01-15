@@ -1060,12 +1060,21 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
     	        }
 		for (i=0; i<chars; i++) {
                     div_t idx = div(i*3, 8);
-		    int val = ((((idx.quot+1)<bytes)?datap[idx.quot+1]<<8:0)|datap[idx.quot])>>(idx.rem);
+		    int val = datap[idx.quot];
+                    if ((idx.quot+1)<bytes) {
+			// if the next byte is valid or that in
+                        // for when the required 3 bits straddle adjacent bytes
+                        val |= datap[idx.quot+1]<<8;
+		    }
+                    // align so least significant 3 bits represent octal char
+		    val >>= idx.rem;
                     if (i==(chars-1)) {
-			// last one, mask off non existant bits
+			// most signifcant char, mask off non existant bits when vector
+                        // size is not a multiple of 3
 			unsigned int rem = vop->varp()->range().bits() % 3;
                         if (rem) {
-                          val &= (1<<rem)-1;
+			    // generate bit mask & zero non existant bits
+                            val &= (1<<rem)-1;
 			}
 		    }
 		    out[chars-i-1] = '0' + (val&7);
@@ -1112,9 +1121,12 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		    char val = (datap[i>>1]>>((i&1)<<2))&15;
                     static char hex[] = "0123456789abcdef";
                     if (i==(chars-1)) {
+			// most signifcant char, mask off non existant bits when vector
+                        // size is not a multiple of 4
 			unsigned int rem = vop->varp()->range().bits() & 3;
                         if (rem) {
-                          val &= (1<<rem)-1;
+			    // generate bit mask & zero non existant bits
+                            val &= (1<<rem)-1;
 			}
 		    }
 		    out[chars-i-1] = hex[val];
@@ -1145,6 +1157,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		}
 		for (i=0; i<bytes; i++) {
 		    char val = datap[bytes-i-1];
+                     // other simulators replace [leading?] zero chars with spaces, replicate here.
 		    out[i] = val?val:' ';
 		}
 		out[i]=0; // NULL terminate
@@ -1250,6 +1263,8 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		CData* datap = ((CData*)(vop->varDatap()));
 		for (int i=0; i<bits; i++) {
                     char set = (i < len)?(value_p->value.str[len-i-1]=='1'):0;
+                    // zero bits 7:1 of byte when assigning to bit 0, else
+                    // or in 1 if bit set
 		    if (i&7) {
   		        datap[i>>3] |= set<<(i&7);
 		    } else {
@@ -1279,8 +1294,25 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
                         short half;
 		    } val;
                     div_t idx = div(i*3, 8);
-                    val.half = ((i < len)?(value_p->value.str[len-i-1]-'0'):0)<<idx.rem;
-                    datap[idx.quot] |= val.byte[0];
+                    if (i < len) {
+			// ignore illegal chars
+                        char digit = value_p->value.str[len-i-1];
+                        if (digit >= '0' && digit <= '7') {
+                            val.half = digit-'0';
+			} else {
+   	        	    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : non octal character '%c' in '%s' as value %s for %s", VL_FUNC, digit, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+                            val.half = 0;
+			}
+		    } else {
+                        val.half = 0;
+		    }
+                    // align octal character to position within vector, note that
+                    // the three bits may straddle a byte bounday so two byte wide
+                    // assignments are made to adjacent bytes - but not if the least
+                    // signifcant byte of the aligned value is the most significant
+                    // byte of the destination.
+                    val.half <<= idx.rem;
+                    datap[idx.quot] |= val.byte[0]; // or in value
                     if (idx.quot < chars) {
 		        datap[idx.quot+1] = val.byte[1]; // this also resets all bits to 0 prior to or'ing above
 		    }
@@ -1322,28 +1354,31 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		int chars = (vop->varp()->range().bits()+3)>>2;
 		CData* datap = ((CData*)(vop->varDatap()));
                 char* val = value_p->value.str;
+                // skip hex ident if one is detected at the start of the string
                 if (val[0] == '0' && (val[1] == 'x' || val[1] == 'X')) {
-		    val += 2; // skip hex ident
+		    val += 2;
 		}
+		int len = strlen(val);
 		for (int i=0; i<chars; i++) {
-  		    int len = strlen(val);
                     char hex;
+                    // compute hex digit value
                     if (i < len) {
-                        char c = val[len-i-1];
-                        if (c >= '0' && c <= '9') hex = c - '0';
-                        else if (c >= 'a' && c <= 'f') hex = c - 'a' + 10;
-                        else if (c >= 'A' && c <= 'F') hex = c - 'A' + 10;
+                        char digit = val[len-i-1];
+                        if (digit >= '0' && digit <= '9') hex = digit - '0';
+                        else if (digit >= 'a' && digit <= 'f') hex = digit - 'a' + 10;
+                        else if (digit >= 'A' && digit <= 'F') hex = digit - 'A' + 10;
                         else {
-   	        	    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : non hex character '%c' in '%s' as value %s for %s", VL_FUNC, c, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+   	        	    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : non hex character '%c' in '%s' as value %s for %s", VL_FUNC, digit, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
   		  	    hex = 0;
 			}
 		    } else {
 			hex = 0;
 		    }
+                    // assign hex digit value to destination
 		    if (i&1) {
   		        datap[i>>1] |= hex<<4;
 		    } else {
-		        datap[i>>1]  = hex;
+		        datap[i>>1]  = hex; // this also resets all bits to 0 prior to or'ing above of the msb
 		    }
 		}
 		return object;
@@ -1363,7 +1398,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		int len	  = strlen(value_p->value.str);
 		CData* datap = ((CData*)(vop->varDatap()));
 		for (int i=0; i<bytes; i++) {
-		    datap[i] = (i < len)?value_p->value.str[len-i-1]:0;
+		    datap[i] = (i < len)?value_p->value.str[len-i-1]:0; // prepend with 0 values before placing string the least signifcant bytes
 		}
 		return object;
 	    }
