@@ -418,6 +418,7 @@ public:
 	    vl_fatal(error_info_p->file, error_info_p->line, "", error_info_p->message);
 	    return;
 	}
+        vl_fatal(error_info_p->file, error_info_p->line, "", "vpi_unsupported called without error info set");
     }
     static const char* str_from_vpiVal(PLI_INT32 vpiVal) {
 	static const char *names[] = {

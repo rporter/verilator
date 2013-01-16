@@ -413,16 +413,17 @@ int _mon_check_putget_str(p_cb_data cb_data) {
         t.type = vpiSimTime;
         t.high = 0;
         t.low = 0;
-        for (int i=2; i<=63; i++) {
+        for (int i=2; i<=128; i++) {
   	  static s_vpi_value v;
+          int words = (i+31)>>5;
 	  DEBUG("========== %d ==========\n", i);
           if (callback_count_strs) {
 	      // check persistance
               if (data[i].type) {
                   v.format = data[i].type;
 	      } else {
-		  static PLI_INT32 vals[] = {vpiBinStrVal, vpiOctStrVal, vpiDecStrVal, vpiHexStrVal};
-                  v.format = vals[rand_r(&seed) % 4];
+		  static PLI_INT32 vals[] = {vpiBinStrVal, vpiOctStrVal, vpiHexStrVal, vpiDecStrVal};
+                  v.format = vals[rand_r(&seed) % ((words>2)?3:4)];
 	  	  DEBUG("new format %d\n", v.format);
 	      }
               vpi_get_value(data[i].sig, &v);
@@ -436,12 +437,13 @@ int _mon_check_putget_str(p_cb_data cb_data) {
 	  }
 
           // check for corruption
-          v.format = i<=32?vpiIntVal:vpiVectorVal;
+          v.format = (words==1)?vpiIntVal:vpiVectorVal;
           vpi_get_value(data[i].sig, &v);
           if (v.format == vpiIntVal) {
+              DEBUG("%08x %08x\n", v.value.integer, data[i].value.integer);
               CHECK_RESULT(v.value.integer, data[i].value.integer);
 	  } else {
-              for (int k=0; k <= (i>>5); k++) {
+              for (int k=0; k < words; k++) {
   	          DEBUG("%d %08x %08x\n", k, v.value.vector[k].aval, data[i].value.vector[k].aval);
                   CHECK_RESULT_HEX(v.value.vector[k].aval, data[i].value.vector[k].aval);
   	      }
@@ -458,18 +460,20 @@ int _mon_check_putget_str(p_cb_data cb_data) {
               vpi_put_value(data[i].check, &v, &t, vpiNoDelay);
 	  } else {
               // stick a new random value in
-              if (i<=32) {
+              unsigned int mask = ((i&31)?(1<<(i&31)):0)-1;
+              if (words == 1) {
                   v.value.integer = rand_r(&seed);
-                  data[i].value.integer = v.value.integer & ((1UL<<i)-1UL);
+                  data[i].value.integer = v.value.integer &= mask;
                   v.format = vpiIntVal;
-   	          DEBUG("new value %d\n", data[i].value.integer);
+   	          DEBUG("new value %08x\n", data[i].value.integer);
 	      } else {
+   	          DEBUG("new value\n");
   	          for (int j=0; j<4; j++) {
-                      int words = i>>5;
                       data[i].value.vector[j].aval = rand_r(&seed);
-                      if (j==words) {
-			  data[i].value.vector[j].aval &= (1<<(i&31))-1;
+                      if (j==(words-1)) {
+			  data[i].value.vector[j].aval &= mask;
 		      }
+       	              DEBUG(" %08x\n", data[i].value.vector[j].aval);
   	          }
                   v.value.vector = data[i].value.vector;
                   v.format = vpiVectorVal;
