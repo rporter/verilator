@@ -166,7 +166,10 @@ class VerilatedVpioVar : public VerilatedVpio {
     const VerilatedVar*		m_varp;
     const VerilatedScope*	m_scopep;
     vluint8_t*			m_prevDatap;	// Previous value of data, for cbValueChange
-    vluint32_t			m_mask;		// memoized variable mask
+    union {
+      vluint8_t	                uint8[4];	
+      vluint32_t	        uint32;	
+    } m_mask;                                   // memoized variable mask
     vluint32_t			m_entSize;	// memoized variable size
 protected:
     void*			m_varDatap;	// varp()->datap() adjusted for array entries
@@ -175,7 +178,7 @@ public:
     VerilatedVpioVar(const VerilatedVar* varp, const VerilatedScope* scopep)
 	: m_varp(varp), m_scopep(scopep), m_index(0) {
 	m_prevDatap = NULL;
-	m_mask = VL_MASK_I(varp->range().bits());
+	m_mask.uint32 = VL_MASK_I(varp->range().bits());
 	m_entSize = varp->entSize();
 	m_varDatap = varp->datap();
     }
@@ -185,7 +188,8 @@ public:
     static inline VerilatedVpioVar* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioVar*>((VerilatedVpio*)h); }
     const VerilatedVar* varp() const { return m_varp; }
     const VerilatedScope* scopep() const { return m_scopep; }
-    vluint32_t mask() const { return m_mask; }
+    vluint32_t mask() const { return m_mask.uint32; }
+    vluint8_t mask_byte(int idx) { return m_mask.uint8[idx & 3]; }
     vluint32_t entSize() const { return m_entSize; }
     virtual const char* name() { return m_varp->name(); }
     virtual const char* fullname() {
@@ -1224,25 +1228,28 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 	    if (VL_UNLIKELY(!value_p->value.vector)) return NULL;
 	    switch (vop->varp()->vltype()) {
 	    case VLVT_UINT8:
-		*((CData*)(vop->varDatap())) = value_p->value.vector[0].aval;
+		*((CData*)(vop->varDatap())) = value_p->value.vector[0].aval & vop->mask();
 		return object;
 	    case VLVT_UINT16:
-		*((SData*)(vop->varDatap())) = value_p->value.vector[0].aval;
+		*((SData*)(vop->varDatap())) = value_p->value.vector[0].aval & vop->mask();
 		return object;
 	    case VLVT_UINT32:
-		*((IData*)(vop->varDatap())) = value_p->value.vector[0].aval;
+		*((IData*)(vop->varDatap())) = value_p->value.vector[0].aval & vop->mask();
 		return object;
 	    case VLVT_WDATA: {
 		int words = VL_WORDS_I(vop->varp()->range().bits());
 		WDataOutP datap = ((IData*)(vop->varDatap()));
 		for (int i=0; i<words; i++) {
 		    datap[i] = value_p->value.vector[i].aval;
+                    if (i==(words-1)) {
+			datap[i] &= vop->mask();
+		    }
 		}
 		return object;
 	    }
 	    case VLVT_UINT64: {
 		*((QData*)(vop->varDatap())) = _VL_SET_QII(
-		    value_p->value.vector[1].aval,
+		    value_p->value.vector[1].aval & vop->mask(),
 		    value_p->value.vector[0].aval);
 		return object;
 	    }
@@ -1288,13 +1295,14 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		int bytes = VL_BYTES_I(vop->varp()->range().bits());
 		int len	 = strlen(value_p->value.str);
 		CData* datap = ((CData*)(vop->varDatap()));
+                div_t idx;
                 datap[0] = 0; // reset zero'th byte
 		for (int i=0; i<chars; i++) {
                     union {
 			char  byte[2];
                         short half;
 		    } val;
-                    div_t idx = div(i*3, 8);
+                    idx = div(i*3, 8);
                     if (i < len) {
 			// ignore illegal chars
                         char digit = value_p->value.str[len-i-1];
@@ -1318,6 +1326,16 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		        datap[idx.quot+1] = val.byte[1]; // this also resets all bits to 0 prior to or'ing above
 		    }
 		}
+                // mask off non existant bits in the most significant byte
+                if (idx.quot == (bytes-1)) {
+                    datap[idx.quot] &= vop->mask_byte(idx.quot);
+		} else if (idx.quot+1 == (bytes-1)) {
+                    datap[idx.quot+1] &= vop->mask_byte(idx.quot+1);
+		}
+                // zero off remaining top bytes
+                for (int i=idx.quot+2; i<bytes; i++) {
+		    datap[i] = 0;
+		}
 		return object;
 	    }
 	    default:
@@ -1326,23 +1344,24 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
   	    }
 	} else if (value_p->format == vpiDecStrVal) {
             char remainder[16];
-            int success;
-	    switch (vop->varp()->vltype()) {
-	    case VLVT_UINT8 : success = sscanf(value_p->value.str, "%hhu%15s", ((CData*)(vop->varDatap())), remainder); break;
-	    case VLVT_UINT16: success = sscanf(value_p->value.str, "%hu%15s",  ((SData*)(vop->varDatap())), remainder); break;
-	    case VLVT_UINT32: success = sscanf(value_p->value.str, "%u%15s",   ((IData*)(vop->varDatap())), remainder); break;
-	    case VLVT_UINT64: success = sscanf(value_p->value.str, "%lu%15s",  ((QData*)(vop->varDatap())), remainder); break;
-	    case VLVT_WDATA:
-	    default:
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s, maximum limit is 64 bits", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
-		return 0;
-	    }
+            unsigned long val;
+            int success = sscanf(value_p->value.str, "%lu%15s", &val, remainder);
             if (success < 1) {
-		_VL_VPI_WARNING(__FILE__, __LINE__, "%s : parsing failed for '%s' as value %s for %s", VL_FUNC, value_p->value.str, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : parsing failed for '%s' as value %s for %s", VL_FUNC, value_p->value.str, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
                 return 0;
 	    }
             if (success > 1) {
 		_VL_VPI_WARNING(__FILE__, __LINE__, "%s : trailing garbage '%s' in '%s' as value %s for %s", VL_FUNC, remainder, value_p->value.str, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
+	    }
+	    switch (vop->varp()->vltype()) {
+	    case VLVT_UINT8 : *((CData*)(vop->varDatap())) = val & vop->mask(); break;
+	    case VLVT_UINT16: *((SData*)(vop->varDatap())) = val & vop->mask(); break;
+	    case VLVT_UINT32: *((IData*)(vop->varDatap())) = val & vop->mask(); break;
+	    case VLVT_UINT64: *((QData*)(vop->varDatap())) = val; ((IData*)(vop->varDatap()))[1] &= vop->mask(); break;
+	    case VLVT_WDATA:
+	    default:
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s, maximum limit is 64 bits", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
+		return 0;
 	    }
             return object;
 	} else if (value_p->format == vpiHexStrVal) {
@@ -1382,6 +1401,8 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		        datap[i>>1]  = hex; // this also resets all bits to 0 prior to or'ing above of the msb
 		    }
 		}
+                // apply bit mask to most significant byte
+                datap[(chars-1)>>1] &= vop->mask_byte((chars-1)>>1);
 		return object;
 	    }
 	    default:
