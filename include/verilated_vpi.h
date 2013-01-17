@@ -449,7 +449,8 @@ public:
 	    "vpiRawTwoStateVal",
 	    "vpiRawFourStateVal",
 	};
-	return names[(vpiVal<sizeof(names))?vpiVal:0];
+        if (vpiVal < 0) return names[0];
+	return names[(vpiVal<=vpiRawFourStateVal)?vpiVal:0];
     }
     static const char* strFromVpiObjType(PLI_INT32 vpiVal) {
 	static const char *names[] = {
@@ -524,6 +525,40 @@ public:
 	    "vpiVarSelect",
 	    "vpiWait",
 	    "vpiWhile",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
 	    "vpiAttribute",
 	    "vpiBitSelect",
 	    "vpiCallback",
@@ -538,14 +573,26 @@ public:
 	    "vpiRegArray",
 	    "vpiSwitchArray",
 	    "vpiUdpArray",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
+	    "*undefined*",
 	    "vpiContAssignBit",
 	    "vpiNamedEventArray",
 	    "vpiIndexedPartSelect",
+	    "*undefined*",
+	    "*undefined*",
 	    "vpiGenScopeArray",
 	    "vpiGenScope",
   	    "vpiGenVar"
 	};
-	return names[(vpiVal<sizeof(names))?vpiVal:0];
+        if (vpiVal < 0) return names[0];
+	return names[(vpiVal<=vpiGenVar)?vpiVal:0];
     }
     static const char* strFromVpiMethod(PLI_INT32 vpiVal) {
 	static const char *names[] = {
@@ -587,7 +634,7 @@ public:
         if (vpiVal>vpiStmt || vpiVal<vpiCondition) {
             return "*undefined*";
         }
-	return names[vpiVal-vpiStmt];
+	return names[vpiVal-vpiCondition];
     }
     static const char* strFromVpiCallbackReason(PLI_INT32 vpiVal) {
 	static const char *names[] = {
@@ -624,7 +671,8 @@ public:
 	    "cbNBASynch",
 	    "cbAtEndOfSimTime"
         };
-	return names[(vpiVal<sizeof(names))?vpiVal:0];
+        if (vpiVal < 0) return names[0];
+	return names[(vpiVal<=cbAtEndOfSimTime)?vpiVal:0];
     }
     static const char* strFromVpiProp(PLI_INT32 vpiVal) {
 	static const char *names[] = {
@@ -672,8 +720,11 @@ public:
 	    "vpiBlocking",
 	    "vpiCaseType",
 	    "vpiFuncType",
+            "vpiNetDeclAssign",
 	    "vpiUserDefn",
 	    "vpiScheduled",
+	    "*undefined*",
+	    "*undefined*",
 	    "vpiActive",
 	    "vpiAutomatic",
 	    "vpiCell",
@@ -684,6 +735,7 @@ public:
 	    "vpiDelayType",
 	    "vpiIteratorType",
 	    "vpiLibrary",
+	    "*undefined*",
 	    "vpiOffset",
 	    "vpiResolvedNetType",
 	    "vpiSaveRestartID",
@@ -703,7 +755,7 @@ public:
         if (vpiVal == vpiUndefined) { 
           return "vpiUndefined";
         }
-	return names[(vpiVal<sizeof(names))?vpiVal:0];
+	return names[(vpiVal<=vpiIsProtected)?vpiVal:0];
     }
 };
 
