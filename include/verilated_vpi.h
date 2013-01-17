@@ -964,6 +964,8 @@ void vpi_put_delays(vpiHandle object, p_vpi_delay delay_p) {
 // value processing
 
 void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
+    static VL_THREAD char outStr[1+VL_MULS_MAX_WORDS*32]; // Maximum required size is for binary string, one byte per bit plus null termination
+    static VL_THREAD int outStrSz = sizeof(outStr)-1;
     VL_DEBUG_IF_PLI(VL_PRINTF("-vltVpi:  vpi_get_value %p\n",object););
     _VL_VPI_ERROR_RESET(); // reset vpi error status
     if (VL_UNLIKELY(!value_p)) return;
@@ -1014,8 +1016,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 	    }
 	    }
 	} else if (value_p->format == vpiBinStrVal) {
-	    static VL_THREAD char out[1+VL_MULS_MAX_WORDS*32];
-	    value_p->value.str = out;
+	    value_p->value.str = outStr;
 	    switch (vop->varp()->vltype()) {
 	    case VLVT_UINT8 :
 	    case VLVT_UINT16:
@@ -1025,16 +1026,16 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		int bits = vop->varp()->range().bits();
 		CData* datap = ((CData*)(vop->varDatap()));
 		int i;
-		if (bits > VL_MULS_MAX_WORDS*32) {
+		if (bits > outStrSz) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
-		  bits = VL_MULS_MAX_WORDS*32;
-		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, bits);
+		  bits = outStrSz;
+		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, bits);
 		}
 		for (i=0; i<bits; i++) {
 		    char val = (datap[i>>3]>>(i&7))&1;
-		    out[bits-i-1] = val?'1':'0';
+		    outStr[bits-i-1] = val?'1':'0';
 		}
-		out[i]=0; // NULL terminate
+		outStr[i]=0; // NULL terminate
 		return;
 	    }
 	    default:
@@ -1042,8 +1043,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		return;
 	    }
 	} else if (value_p->format == vpiOctStrVal) {
-	    static VL_THREAD char out[2+(VL_MULS_MAX_WORDS*32)/3];
-	    value_p->value.str = out;
+	    value_p->value.str = outStr;
 	    switch (vop->varp()->vltype()) {
 	    case VLVT_UINT8 :
 	    case VLVT_UINT16:
@@ -1054,10 +1054,10 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		int bytes = VL_BYTES_I(vop->varp()->range().bits());
 		CData* datap = ((CData*)(vop->varDatap()));
 		int i;
-		if (chars > sizeof(out)-1) {
+		if (chars > outStrSz) {
 		    // limit maximum size of output to size of buffer to prevent overrun.
-		    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, chars);
-		    chars = sizeof(out)-1;	
+		    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, chars);
+		    chars = outStrSz;
     	        }
 		for (i=0; i<chars; i++) {
                     div_t idx = div(i*3, 8);
@@ -1078,32 +1078,31 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
                             val &= (1<<rem)-1;
 			}
 		    }
-		    out[chars-i-1] = '0' + (val&7);
+		    outStr[chars-i-1] = '0' + (val&7);
 		}
-		out[i]=0; // NULL terminate
+		outStr[i]=0; // NULL terminate
 		return;
 	    }
 	    default:
-                strcpy(out, "0");
+                strcpy(outStr, "0");
 		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
 		return;
 	    }
 	} else if (value_p->format == vpiDecStrVal) {
-	    static VL_THREAD char out[1+VL_MULS_MAX_WORDS*32];
-	    value_p->value.str = out;
+	    value_p->value.str = outStr;
 	    switch (vop->varp()->vltype()) {
-	    case VLVT_UINT8 : snprintf(out, sizeof(out), "%hhu", (unsigned  int)*((CData*)(vop->varDatap()))); return;
-	    case VLVT_UINT16: snprintf(out, sizeof(out), "%hu",  (unsigned  int)*((SData*)(vop->varDatap()))); return;
-	    case VLVT_UINT32: snprintf(out, sizeof(out), "%u",   (unsigned  int)*((IData*)(vop->varDatap()))); return;
-	    case VLVT_UINT64: snprintf(out, sizeof(out), "%lu",  (unsigned long)*((QData*)(vop->varDatap()))); return;
+     	    // outStrSz does not include NULL termination so add one
+	    case VLVT_UINT8 : snprintf(outStr, outStrSz+1, "%hhu", (unsigned  int)*((CData*)(vop->varDatap()))); return;
+	    case VLVT_UINT16: snprintf(outStr, outStrSz+1, "%hu",  (unsigned  int)*((SData*)(vop->varDatap()))); return;
+	    case VLVT_UINT32: snprintf(outStr, outStrSz+1, "%u",   (unsigned  int)*((IData*)(vop->varDatap()))); return;
+	    case VLVT_UINT64: snprintf(outStr, outStrSz+1, "%lu",  (unsigned long)*((QData*)(vop->varDatap()))); return;
 	    default:
-                strcpy(out, "-1");
+                strcpy(outStr, "-1");
 		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s, maximum limit is 64 bits", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
 		return;
 	    }
 	} else if (value_p->format == vpiHexStrVal) {
-	    static VL_THREAD char out[1+VL_MULS_MAX_WORDS*8];
-	    value_p->value.str = out;
+	    value_p->value.str = outStr;
 	    switch (vop->varp()->vltype()) {
 	    case VLVT_UINT8 :
 	    case VLVT_UINT16:
@@ -1113,10 +1112,10 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		int chars = (vop->varp()->range().bits()+3)>>2;
 		CData* datap = ((CData*)(vop->varDatap()));
 		int i;
-		if (chars > sizeof(out)-1) {
+		if (chars > outStrSz) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
-		  chars = sizeof(out)-1;
-		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, chars);
+		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, chars);
+		  chars = outStrSz;
 		}
 		for (i=0; i<chars; i++) {
 		    char val = (datap[i>>1]>>((i&1)<<2))&15;
@@ -1130,9 +1129,9 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
                             val &= (1<<rem)-1;
 			}
 		    }
-		    out[chars-i-1] = hex[val];
+		    outStr[chars-i-1] = hex[val];
 		}
-		out[i]=0; // NULL terminate
+		outStr[i]=0; // NULL terminate
 		return;
 	    }
 	    default:
@@ -1140,8 +1139,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		return;
 	    }
 	} else if (value_p->format == vpiStringVal) {
-	    static VL_THREAD char out[1+VL_MULS_MAX_WORDS*4];
-	    value_p->value.str = out;
+	    value_p->value.str = outStr;
 	    switch (vop->varp()->vltype()) {
 	    case VLVT_UINT8 :
 	    case VLVT_UINT16:
@@ -1151,17 +1149,17 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		int bytes = VL_BYTES_I(vop->varp()->range().bits());
 		CData* datap = ((CData*)(vop->varDatap()));
 		int i;
-		if (bytes > VL_MULS_MAX_WORDS*4) {
+		if (bytes > outStrSz) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
-		  bytes = VL_MULS_MAX_WORDS*4;
-		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), sizeof(out), VL_MULS_MAX_WORDS, bytes);
+		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, bytes);
+		  bytes = outStrSz;
 		}
 		for (i=0; i<bytes; i++) {
 		    char val = datap[bytes-i-1];
                      // other simulators replace [leading?] zero chars with spaces, replicate here.
-		    out[i] = val?val:' ';
+		    outStr[i] = val?val:' ';
 		}
-		out[i]=0; // NULL terminate
+		outStr[i]=0; // NULL terminate
 		return;
 	    }
 	    default:
