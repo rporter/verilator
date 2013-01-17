@@ -28,7 +28,7 @@
 // __FILE__ is too long
 #define FILENM "t_vpi_var.cpp"
 
-#define DEBUG if (0) printf
+#define TEST_MSG if (0) printf
 
 unsigned int main_time = false;
 unsigned int callback_count = false;
@@ -416,7 +416,7 @@ int _mon_check_putget_str(p_cb_data cb_data) {
         for (int i=2; i<=128; i++) {
   	  static s_vpi_value v;
           int words = (i+31)>>5;
-	  DEBUG("========== %d ==========\n", i);
+	  TEST_MSG("========== %d ==========\n", i);
           if (callback_count_strs) {
 	      // check persistance
               if (data[i].type) {
@@ -424,10 +424,10 @@ int _mon_check_putget_str(p_cb_data cb_data) {
 	      } else {
 		  static PLI_INT32 vals[] = {vpiBinStrVal, vpiOctStrVal, vpiHexStrVal, vpiDecStrVal};
                   v.format = vals[rand_r(&seed) % ((words>2)?3:4)];
-	  	  DEBUG("new format %d\n", v.format);
+	  	  TEST_MSG("new format %d\n", v.format);
 	      }
               vpi_get_value(data[i].sig, &v);
-	      DEBUG("%s\n", v.value.str);
+	      TEST_MSG("%s\n", v.value.str);
               if (data[i].type) {
                   CHECK_RESULT_CSTR(v.value.str, data[i].str);
 	      } else {
@@ -440,11 +440,11 @@ int _mon_check_putget_str(p_cb_data cb_data) {
           v.format = (words==1)?vpiIntVal:vpiVectorVal;
           vpi_get_value(data[i].sig, &v);
           if (v.format == vpiIntVal) {
-              DEBUG("%08x %08x\n", v.value.integer, data[i].value.integer);
+              TEST_MSG("%08x %08x\n", v.value.integer, data[i].value.integer);
               CHECK_RESULT(v.value.integer, data[i].value.integer);
 	  } else {
               for (int k=0; k < words; k++) {
-  	          DEBUG("%d %08x %08x\n", k, v.value.vector[k].aval, data[i].value.vector[k].aval);
+  	          TEST_MSG("%d %08x %08x\n", k, v.value.vector[k].aval, data[i].value.vector[k].aval);
                   CHECK_RESULT_HEX(v.value.vector[k].aval, data[i].value.vector[k].aval);
   	      }
   	  }
@@ -465,15 +465,15 @@ int _mon_check_putget_str(p_cb_data cb_data) {
                   v.value.integer = rand_r(&seed);
                   data[i].value.integer = v.value.integer &= mask;
                   v.format = vpiIntVal;
-   	          DEBUG("new value %08x\n", data[i].value.integer);
+   	          TEST_MSG("new value %08x\n", data[i].value.integer);
 	      } else {
-   	          DEBUG("new value\n");
+   	          TEST_MSG("new value\n");
   	          for (int j=0; j<4; j++) {
                       data[i].value.vector[j].aval = rand_r(&seed);
                       if (j==(words-1)) {
 			  data[i].value.vector[j].aval &= mask;
 		      }
-       	              DEBUG(" %08x\n", data[i].value.vector[j].aval);
+       	              TEST_MSG(" %08x\n", data[i].value.vector[j].aval);
   	          }
                   v.value.vector = data[i].value.vector;
                   v.format = vpiVectorVal;

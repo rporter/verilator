@@ -351,11 +351,13 @@ public:
     static VerilatedVpiError* error_info(); // getter for vpi error info
 };
 
-#define _VL_VPI_ERROR_SET_ \
+#define _VL_VPI_ERROR_SET \
+    do { \
         va_list args; \
         va_start(args, message); \
         vsnprintf(m_buff, sizeof(m_buff), message.c_str(), args); \
-        va_end(args);
+        va_end(args); \
+    } while (0)
 
 class VerilatedVpiError {
     //// Container for vpi error info
@@ -389,18 +391,19 @@ public:
     VerilatedVpiError() : m_flag(false) {
 	m_error_info.product = (PLI_BYTE8*)Verilated::productName();
     }
+    ~VerilatedVpiError() {}
     VerilatedVpiError* setMessage(PLI_INT32 level) {
 	m_flag=true;
 	m_error_info.level = level;
         return this;
     }
     void setMessage(string file, PLI_INT32 line, string message, ...) {
-        _VL_VPI_ERROR_SET_
+        _VL_VPI_ERROR_SET;
         m_error_info.state = vpiPLI;
         setError((PLI_BYTE8*)m_buff, (PLI_BYTE8*)file.c_str(), line);
     }
     void setMessage(PLI_BYTE8 *code, PLI_BYTE8 *file, PLI_INT32 line, string message, ...) {
-        _VL_VPI_ERROR_SET_
+        _VL_VPI_ERROR_SET;
         m_error_info.state = vpiPLI;
         setError((PLI_BYTE8*)message.c_str(), code, file, line);
     }
@@ -420,7 +423,7 @@ public:
 	}
         vl_fatal(error_info_p->file, error_info_p->line, "", "vpi_unsupported called without error info set");
     }
-    static const char* str_from_vpiVal(PLI_INT32 vpiVal) {
+    static const char* strFromVpiVal(PLI_INT32 vpiVal) {
 	static const char *names[] = {
 	    "*undefined*",
 	    "vpiBinStrVal",
@@ -444,7 +447,7 @@ public:
 	};
 	return names[(vpiVal<sizeof(names))?vpiVal:0];
     }
-    static const char* str_from_vpiObjType(PLI_INT32 vpiVal) {
+    static const char* strFromVpiObjType(PLI_INT32 vpiVal) {
 	static const char *names[] = {
 	    "*undefined*",
 	    "vpiAlways",
@@ -540,7 +543,7 @@ public:
 	};
 	return names[(vpiVal<sizeof(names))?vpiVal:0];
     }
-    static const char* str_from_vpiMethod(PLI_INT32 vpiVal) {
+    static const char* strFromVpiMethod(PLI_INT32 vpiVal) {
 	static const char *names[] = {
 	    "vpiCondition",
 	    "vpiDelay",
@@ -582,7 +585,7 @@ public:
         }
 	return names[vpiVal-vpiStmt];
     }
-    static const char* str_from_vpiCallbackReason(PLI_INT32 vpiVal) {
+    static const char* strFromVpiCallbackReason(PLI_INT32 vpiVal) {
 	static const char *names[] = {
 	    "*undefined*",
   	    "cbValueChange",
@@ -619,7 +622,7 @@ public:
         };
 	return names[(vpiVal<sizeof(names))?vpiVal:0];
     }
-    static const char* str_from_vpiProp(PLI_INT32 vpiVal) {
+    static const char* strFromVpiProp(PLI_INT32 vpiVal) {
 	static const char *names[] = {
 	    "*undefined or other*",
             "vpiType",
@@ -740,7 +743,7 @@ vpiHandle vpi_register_cb(p_cb_data cb_data_p) {
 	return vop->castVpiHandle();
     }
     default:
-        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : unsupported callback type %s", VL_FUNC, VerilatedVpiError::str_from_vpiCallbackReason(cb_data_p->reason));
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : unsupported callback type %s", VL_FUNC, VerilatedVpiError::strFromVpiCallbackReason(cb_data_p->reason));
 	return NULL;
     };
 }
@@ -850,7 +853,7 @@ vpiHandle vpi_handle(PLI_INT32 type, vpiHandle object) {
 	}
     }
     default:
-        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiMethod(type));
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::strFromVpiMethod(type));
 	return 0;
     }
 }
@@ -879,7 +882,7 @@ vpiHandle vpi_iterate(PLI_INT32 type, vpiHandle object) {
 		->castVpiHandle());
     }
     default:
-        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiObjType(type));
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::strFromVpiObjType(type));
 	return 0;
     }
 }
@@ -919,7 +922,7 @@ PLI_INT32 vpi_get(PLI_INT32 property, vpiHandle object) {
 	else return 1;
     }
     default:
-        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiProp(property));
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::strFromVpiProp(property));
 	return 0;
     }
 }
@@ -945,7 +948,7 @@ PLI_BYTE8 *vpi_get_str(PLI_INT32 property, vpiHandle object) {
 	return (PLI_BYTE8*)vop->defname();
     }
     default:
-        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::str_from_vpiProp(property));
+        _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, nothing will be returned", VL_FUNC, VerilatedVpiError::strFromVpiProp(property));
 	return 0;
     }
 }
@@ -1011,7 +1014,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		return;
 	    }
 	    default: {
-                _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+                _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return;
 	    }
 	    }
@@ -1029,7 +1032,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		if (bits > outStrSz) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
 		  bits = outStrSz;
-		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, bits);
+		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, bits);
 		}
 		for (i=0; i<bits; i++) {
 		    char val = (datap[i>>3]>>(i&7))&1;
@@ -1039,7 +1042,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		return;
 	    }
 	    default:
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return;
 	    }
 	} else if (value_p->format == vpiOctStrVal) {
@@ -1056,7 +1059,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		int i;
 		if (chars > outStrSz) {
 		    // limit maximum size of output to size of buffer to prevent overrun.
-		    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, chars);
+		    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, chars);
 		    chars = outStrSz;
     	        }
 		for (i=0; i<chars; i++) {
@@ -1085,7 +1088,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 	    }
 	    default:
                 strcpy(outStr, "0");
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return;
 	    }
 	} else if (value_p->format == vpiDecStrVal) {
@@ -1098,7 +1101,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 	    case VLVT_UINT64: snprintf(outStr, outStrSz+1, "%lu",  (unsigned long)*((QData*)(vop->varDatap()))); return;
 	    default:
                 strcpy(outStr, "-1");
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s, maximum limit is 64 bits", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s, maximum limit is 64 bits", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return;
 	    }
 	} else if (value_p->format == vpiHexStrVal) {
@@ -1114,7 +1117,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		int i;
 		if (chars > outStrSz) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
-		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, chars);
+		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, chars);
 		  chars = outStrSz;
 		}
 		for (i=0; i<chars; i++) {
@@ -1135,7 +1138,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		return;
 	    }
 	    default:
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return;
 	    }
 	} else if (value_p->format == vpiStringVal) {
@@ -1151,7 +1154,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		int i;
 		if (bytes > outStrSz) {
 		  // limit maximum size of output to size of buffer to prevent overrun.
-		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, bytes);
+		  _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Truncating string value of %s for %s as buffer size (%d, VL_MULS_MAX_WORDS=%d) is less than required (%d)", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname(), outStrSz, VL_MULS_MAX_WORDS, bytes);
 		  bytes = outStrSz;
 		}
 		for (i=0; i<bytes; i++) {
@@ -1163,7 +1166,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		return;
 	    }
 	    default:
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return;
 	    }
 	} else if (value_p->format == vpiIntVal) {
@@ -1182,11 +1185,11 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
 		// Not legal
 		value_p->value.integer = 0;
 	    default:
-                _VL_VPI_ERROR(__FILE__, __LINE__, "%s: unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+                _VL_VPI_ERROR(__FILE__, __LINE__, "%s: unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return;
 	    }
 	}
-        _VL_VPI_ERROR(__FILE__, __LINE__, "%s: unsupported format (%s) as requested for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+        _VL_VPI_ERROR(__FILE__, __LINE__, "%s: unsupported format (%s) as requested for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 	return;
     }
     else if (VerilatedVpioConst* vop = VerilatedVpioConst::castp(object)) {
@@ -1194,10 +1197,10 @@ void vpi_get_value(vpiHandle object, p_vpi_value value_p) {
   	  value_p->value.integer = vop->num();
   	  return;
 	}
-        _VL_VPI_ERROR(__FILE__, __LINE__, "%s: unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+        _VL_VPI_ERROR(__FILE__, __LINE__, "%s: unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
         return;
     }
-    _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format));
+    _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format));
 }
 
 vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
@@ -1244,7 +1247,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		return object;
 	    }
 	    default: {
-                _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+                _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return NULL;
 	    }
 	    }
@@ -1271,7 +1274,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		return object;
 	    }
 	    default:
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return 0;
 	    }
 	} else if (value_p->format == vpiOctStrVal) {
@@ -1298,7 +1301,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
                         if (digit >= '0' && digit <= '7') {
                             val.half = digit-'0';
 			} else {
-   	        	    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : non octal character '%c' in '%s' as value %s for %s", VL_FUNC, digit, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+   	        	    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : non octal character '%c' in '%s' as value %s for %s", VL_FUNC, digit, value_p->value.str, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
                             val.half = 0;
 			}
 		    } else {
@@ -1318,7 +1321,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		return object;
 	    }
 	    default:
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return 0;
   	    }
 	} else if (value_p->format == vpiDecStrVal) {
@@ -1331,15 +1334,15 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 	    case VLVT_UINT64: success = sscanf(value_p->value.str, "%lu%15s",  ((QData*)(vop->varDatap())), remainder); break;
 	    case VLVT_WDATA:
 	    default:
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s, maximum limit is 64 bits", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s, maximum limit is 64 bits", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return 0;
 	    }
             if (success < 1) {
-		_VL_VPI_WARNING(__FILE__, __LINE__, "%s : parsing failed for '%s' as value %s for %s", VL_FUNC, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_WARNING(__FILE__, __LINE__, "%s : parsing failed for '%s' as value %s for %s", VL_FUNC, value_p->value.str, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
                 return 0;
 	    }
             if (success > 1) {
-		_VL_VPI_WARNING(__FILE__, __LINE__, "%s : trailing garbage '%s' in '%s' as value %s for %s", VL_FUNC, remainder, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_WARNING(__FILE__, __LINE__, "%s : trailing garbage '%s' in '%s' as value %s for %s", VL_FUNC, remainder, value_p->value.str, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 	    }
             return object;
 	} else if (value_p->format == vpiHexStrVal) {
@@ -1366,7 +1369,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
                         else if (digit >= 'a' && digit <= 'f') hex = digit - 'a' + 10;
                         else if (digit >= 'A' && digit <= 'F') hex = digit - 'A' + 10;
                         else {
-   	        	    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : non hex character '%c' in '%s' as value %s for %s", VL_FUNC, digit, value_p->value.str, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+   	        	    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : non hex character '%c' in '%s' as value %s for %s", VL_FUNC, digit, value_p->value.str, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
   		  	    hex = 0;
 			}
 		    } else {
@@ -1382,7 +1385,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		return object;
 	    }
 	    default:
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return 0;
 	    }
 	} else if (value_p->format == vpiStringVal) {
@@ -1401,7 +1404,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 		return object;
 	    }
 	    default:
-		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+		_VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return 0;
 	    }
 	} else if (value_p->format == vpiIntVal) {
@@ -1418,14 +1421,14 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value value_p,
 	    case VLVT_WDATA: // FALLTHRU
 	    case VLVT_UINT64: // FALLTHRU
 	    default:
-                _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+                _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 		return 0;
 	    }
 	}
-        _VL_VPI_ERROR(__FILE__, __LINE__, "%s: unsupported format (%s) as requested for %s", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format), vop->fullname());
+        _VL_VPI_ERROR(__FILE__, __LINE__, "%s: unsupported format (%s) as requested for %s", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format), vop->fullname());
 	return NULL;
     }
-    _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for ??", VL_FUNC, VerilatedVpiError::str_from_vpiVal(value_p->format));
+    _VL_VPI_ERROR(__FILE__, __LINE__, "%s : unsupported format (%s) for ??", VL_FUNC, VerilatedVpiError::strFromVpiVal(value_p->format));
     return NULL;
 }
 
@@ -1574,7 +1577,7 @@ PLI_INT32 vpi_control(PLI_INT32 operation, ...) {
 	return 1;
     }
     }
-    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, ignoring", VL_FUNC, VerilatedVpiError::str_from_vpiProp(operation));
+    _VL_VPI_WARNING(__FILE__, __LINE__, "%s : Unsupported type %s, ignoring", VL_FUNC, VerilatedVpiError::strFromVpiProp(operation));
     return 0;
 }
 
