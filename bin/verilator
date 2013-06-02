@@ -3,7 +3,7 @@ eval 'exec perl -wS $0 ${1+"$@"}'
   if 0;
 ######################################################################
 #
-# Copyright 2003-2012 by Wilson Snyder. This program is free software; you
+# Copyright 2003-2013 by Wilson Snyder. This program is free software; you
 # can redistribute it and/or modify it under the terms of either the GNU
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
@@ -202,9 +202,8 @@ Verilator - Convert Verilog code to C++/SystemC
 
     verilator --help
     verilator --version
-    verilator --cc [options] [top_level.v] [opt_c_files.cpp/c/cc/a/o/so]
-    verilator --sc [options] [top_level.v] [opt_c_files.cpp/c/cc/a/o/so]
-    verilator --sp [options] [top_level.v] [opt_c_files.cpp/c/cc/a/o/so]
+    verilator --cc [options] [top_level.v]... [opt_c_files.cpp/c/cc/a/o/so]
+    verilator --sc [options] [top_level.v]... [opt_c_files.cpp/c/cc/a/o/so]
     verilator --lint-only    [top_level.v]...
 
 =head1 DESCRIPTION
@@ -246,6 +245,7 @@ descriptions in the next sections for more information.
      +1364-2005ext+<ext>        Use Verilog 2005 with file extension <ext>
      +1800-2005ext+<ext>        Use SystemVerilog 2005 with file extension <ext>
      +1800-2009ext+<ext>        Use SystemVerilog 2009 with file extension <ext>
+     +1800-2012ext+<ext>        Use SystemVerilog 2012 with file extension <ext>
     --assert                    Enable all assertions
     --autoflush                 Flush streams after all $displays
     --bbox-sys                  Blackbox unknown $system calls
@@ -302,6 +302,8 @@ descriptions in the next sections for more information.
     --output-split <bytes>      Split .cpp files into pieces
     --output-split-cfuncs <statements>   Split .ccp functions
     --pins-bv <bits>            Specify types for top level ports
+    --pins-sc-uint              Specify types for top level ports
+    --pins-sc-biguint           Specify types for top level ports
     --pins-uint8                Specify types for top level ports
     --pipe-filter <command>     Filter all input through a script
     --prefix <topname>          Name of top level class
@@ -309,12 +311,13 @@ descriptions in the next sections for more information.
     --private                   Debugging; see docs
     --psl                       Enable PSL parsing
     --public                    Debugging; see docs
+    --report-unoptflat          Extra diagnostics for UNOPTFLAT
     --savable			Enable model save-restore
     --sc                        Create SystemC output
     --sp                        Create SystemPerl output
     --stats                     Create statistics file
      -sv                        Enable SystemVerilog parsing
-     +systemverilogext+<ext>    Synonym for +1800-2009ext+<ext>
+     +systemverilogext+<ext>    Synonym for +1800-2012ext+<ext>
     --top-module <topname>      Name of top level input module
     --trace                     Enable waveform creation
     --trace-depth <levels>      Depth of tracing
@@ -373,6 +376,8 @@ with the --exe option.
 =item +1800-2005ext+I<ext>
 
 =item +1800-2009ext+I<ext>
+
+=item +1800-2012ext+I<ext>
 
 Specifies the language standard to be used with a specific filename
 extension, I<ext>.
@@ -585,7 +590,7 @@ C<--debug> is equivalent to C<--debugi 4>).
 
 Select the language to be used by default when first processing each
 Verilog file.  The language value must be "1364-1995", "1364-2001",
-"1364-2005", "1800-2005" or "1800-2009".
+"1364-2005", "1800-2005", "1800-2009" or "1800-2012".
 
 Any language associated with a particular file extension (see the various
 +I<lang>ext+ options) will be used in preference to the language specified
@@ -598,7 +603,7 @@ legacy mixed language designs, the various +I<lang>ext+ options should be
 used.
 
 If no language is specified, either by this flag or +I<lang>ext+ options,
-then the latest SystemVerilog language (IEEE 1800-2009) is used.
+then the latest SystemVerilog language (IEEE 1800-2012) is used.
 
 =item +define+I<var>+I<value>
 
@@ -817,6 +822,20 @@ wide should use sc_bv's instead of uint32/vluint64_t's.  The default is
 33".  The more sc_bv is used, the worse for performance.  Use the
 "/*verilator sc_bv*/" attribute to select specific ports to be sc_bv.
 
+=item --pins-sc-uint
+
+Specifies SystemC inputs/outputs of greater than 2 bits wide should use
+sc_uint between 2 and 64.  When combined with the "--pins-sc-biguint"
+combination, it results in sc_uint being used between 2 and 64 and
+sc_biguint being used between 65 and 512.
+
+=item --pins-sc-biguint
+
+Specifies SystemC inputs/outputs of greater than 65 bits wide should use
+sc_biguint between 65 and 512, and sc_bv from 513 upwards.  When combined
+with the "--pins-sc-uint" combination, it results in sc_uint being used
+between 2 and 64 and sc_biguint being used between 65 and 512.
+
 =item --pins-uint8
 
 Specifies SystemC inputs/outputs that are smaller than the --pins-bv
@@ -878,6 +897,27 @@ inlining.  This will also turn off inlining as if all modules had a
 /*verilator public_module*/, unless the module specifically enabled it with
 /*verilator inline_module*/.
 
+=item --report-unoptflat
+
+Extra diagnostics for UNOPTFLAT warnings. This includes for each loop, the
+10 widest variables in the loop, and the 10 most fanned out variables in
+the loop. These are candidates for splitting into multiple variables to
+break the loop.
+
+In addition produces a GraphViz DOT file of the entire strongly connected
+components within the source associated with each loop. This is produced
+irrespective of whether --dump-tree is set. Such graphs may help in
+analysing the problem, but can be very large indeed.
+
+Various commands exist for viewing and manipulating DOT files. For example
+the I<dot> command can be used to convert a DOT file to a PDF for
+printing. For example:
+
+    dot -Tpdf -O Vt_unoptflat_simple_2_35_unoptflat.dot
+
+will generate a PDF Vt_unoptflat_simple_2_35_unoptflat.dot.pdf from the DOT
+file.
+
 =item --savable
 
 Enable including save and restore functions in the generated model.
@@ -919,7 +959,7 @@ compatibility with other simulators.
 
 =item  +systemverilogext+I<ext>
 
-A synonym for C<+1800-2009ext+>I<ext>.
+A synonym for C<+1800-2012ext+>I<ext>.
 
 =item --top-module I<topname>
 
@@ -1028,10 +1068,10 @@ Disable the specified warning message.
 =item -Wno-lint
 
 Disable all lint related warning messages, and all style warnings.  This is
-equivalent to "-Wno-CASEINCOMPLETE -Wno-CASEOVERLAP -Wno-CASEX
--Wno-CASEWITHX -Wno-CMPCONST -Wno-ENDLABEL -Wno-IMPLICIT -Wno-LITENDIAN
--Wno-PINMISSING -Wno-SYNCASYNCNET -Wno-UNDRIVEN -Wno-UNSIGNED -Wno-UNUSED
--Wno-WIDTH" plus the list shown for Wno-style.
+equivalent to "-Wno-ALWCOMBORDER -Wno-CASEINCOMPLETE -Wno-CASEOVERLAP
+-Wno-CASEX -Wno-CASEWITHX -Wno-CMPCONST -Wno-ENDLABEL -Wno-IMPLICIT
+-Wno-LITENDIAN -Wno-PINMISSING -Wno-SYNCASYNCNET -Wno-UNDRIVEN
+-Wno-UNSIGNED -Wno-UNUSED -Wno-WIDTH" plus the list shown for Wno-style.
 
 It is strongly recommended you cleanup your code rather than using this
 option, it is only intended to be use when running test-cases of code
@@ -1060,9 +1100,10 @@ Enables the specified warning message.
 
 Enable all lint related warning messages (note by default they are already
 enabled), but do not affect style messages.  This is equivalent to
-"-Wwarn-CASEINCOMPLETE -Wwarn-CASEOVERLAP -Wwarn-CASEX -Wwarn-CASEWITHX
--Wwarn-CMPCONST -Wwarn-ENDLABEL -Wwarn-IMPLICIT -Wwarn-LITENDIAN
--Wwarn-PINMISSING -Wwarn-REALCVT -Wwarn-UNSIGNED -Wwarn-WIDTH".
+"-Wwarn-ALWCOMBORDER -Wwarn-CASEINCOMPLETE -Wwarn-CASEOVERLAP -Wwarn-CASEX
+-Wwarn-CASEWITHX -Wwarn-CMPCONST -Wwarn-ENDLABEL -Wwarn-IMPLICIT
+-Wwarn-LITENDIAN -Wwarn-PINMISSING -Wwarn-REALCVT -Wwarn-UNSIGNED
+-Wwarn-WIDTH".
 
 =item -Wwarn-style
 
@@ -1321,7 +1362,8 @@ OPT_FAST and OPT_SLOW affect.  For best results, use OPT="-O2", and link
 with "-static".  Nearly the same results can be had with much better
 compile times with OPT_FAST="-O1 -fstrict-aliasing".  Higher optimization
 such as "-O3" may help, but gcc compile times may be excessive under O3 on
-even medium sized designs.
+even medium sized designs.  Alternatively, some larger designs report
+better performance using "-Os".
 
 Unfortunately, using the optimizer with SystemC files can result in
 compiles taking several minutes.  (The SystemC libraries have many little
@@ -1878,29 +1920,25 @@ uwire keyword.
 
 =head2 SystemVerilog 2005 (IEEE 1800-2005) Support
 
-Verilator currently has some support for SystemVerilog synthesis
-constructs. As SystemVerilog features enter common usage they are added;
-please file a bug if a feature you need is missing.
-
 Verilator supports ==? and !=? operators, ++ and -- in some contexts,
 $bits, $countones, $error, $fatal, $info, $isunknown, $onehot, $onehot0,
 $unit, $warning, always_comb, always_ff, always_latch, bit, byte, chandle,
-const, do-while, enum, export, final, import, int, logic, longint, package,
-program, shortint, struct, time, typedef, union, var, void, priority
-case/if, and unique case/if.
+const, do-while, enum, export, final, import, int, interface, logic,
+longint, modport, package, program, shortint, struct, time, typedef, union,
+var, void, priority case/if, and unique case/if.
 
 It also supports .name and .* interconnection.
 
 Verilator partially supports concurrent assert and cover statements; see
 the enclosed coverage tests for the syntax which is allowed.
 
-=head2 SystemVerilog 2009 (IEEE 1800-2009) Support
+=head2 SystemVerilog 2012 (IEEE 1800-2012) Support
 
-Verilator implements a full SystemVerilog 2009 preprocessor, including
+Verilator implements a full SystemVerilog 2012 preprocessor, including
 function call-like preprocessor defines, default define arguments,
 `__FILE__, `__LINE__ and `undefineall.
 
-Verilator currently has some support for SystemVerilog 2009 synthesis
+Verilator currently has some support for SystemVerilog synthesis
 constructs. As SystemVerilog features enter common usage they are added;
 please file a bug if a feature you need is missing.
 
@@ -2069,6 +2107,11 @@ If you will be reading or writing any Verilog variables in the C++
 functions, the Verilog signals must be declared with /*verilator public*/.
 See also the public task feature; writing an accessor may result in cleaner
 code.
+
+=item `SYSTEMVERILOG
+
+The SYSTEMVERILOG, SV_COV_START and related standard defines are set by
+default when --language is 1800-*.
 
 =item `VERILATOR
 
@@ -2327,6 +2370,11 @@ always @* to reduce missing activity items.  Avoid putting $displays in
 combo blocks, as they may print multiple times when not desired, even on
 compliant simulators as event ordering is not specified.
 
+=head2 Bind
+
+Verilator only supports "bind" to a target module name, not an instance
+path.
+
 =head2 Dotted cross-hierarchy references
 
 Verilator supports dotted references to variables, functions and tasks in
@@ -2548,6 +2596,17 @@ the disable statement itself is inside.  This was commonly used to provide
 loop break and continue functionality before SystemVerilog added the break
 and continue keywords.
 
+=item inside
+
+Inside expressions may not include unpacked array traversal or $ as an
+upper bound.  Case inside and case matches are also unsupported.
+
+=item interface
+
+Interfaces and modports, including with generated data types are supported.
+Generate blocks around modports are not supported, nor are virtual
+interfaces nor unnamed interfaces.
+
 =item priority if, unique if
 
 Priority and unique if's are treated as normal ifs and not asserted to be
@@ -2657,6 +2716,20 @@ compile your design.
 List of all warnings:
 
 =over 4
+
+=item ALWCOMBORDER
+
+Warns that an always_comb block has a variable which is set after it is
+used.  This may cause simulation-synthesis mismatches, as not all
+commercial simulators allow this ordering.
+
+    always_comb begin
+       a = b;
+       b = 1;
+    end
+
+Ignoring this warning will only suppress the lint check, it will simulate
+correctly.
 
 =item ASSIGNIN
 
@@ -2822,6 +2895,15 @@ designs should now be using the #(...) format to specify parameters.
 Disabled by default as this is a code style warning; it will simulate
 correctly.
 
+=item DETECTARRAY
+
+Error when Verilator tries to deal with a combinatorial loop that could not be
+flattened, and which involves a datatype which Verilator cannot handle, such
+as an unpacked struct or a large unpacked array. This typically ocurrs when
+-Wno-UNOPTFLAT has been used to override an UNOPTFLAT warning (see below).
+
+The solution is to break the loop, as described for UNOPTFLAT.
+
 =item ENDLABEL
 
 Warns that a label attached to a "end"-something statement does not match
@@ -2903,7 +2985,7 @@ simulators.
 
 =item LITENDIAN
 
-Warns that a vector is declared with little endian bit numbering
+Warns that a packed vector is declared with little endian bit numbering
 (i.e. [0:7]).  Big endian bit numbering is now the overwhelming standard,
 and little numbering is now thus often due to simple oversight instead of
 intent.
@@ -3121,6 +3203,11 @@ clock_enable meta comment described above.
 The UNOPTFLAT warning may also occur where outputs from a block of logic
 are independent, but occur in the same always block.  To fix this, use the
 isolate_assignments meta comment described above.
+
+To assist in resolving UNOPTFLAT, the option C<--report-unoptflat> can be
+used, which will provide suggestions for variables that can be split up,
+and a graph of all the nodes connected in the loop. See the L<Arguments>
+section for more details.
 
 Ignoring this warning will only slow simulations, it will simulate
 correctly.
@@ -3708,7 +3795,7 @@ Thanks to them, and all those we've missed including above.
 
 The latest version is available from L<http://www.veripool.org/>.
 
-Copyright 2003-2012 by Wilson Snyder.  Verilator is free software; you can
+Copyright 2003-2013 by Wilson Snyder.  Verilator is free software; you can
 redistribute it and/or modify the Verilator internals under the terms of
 either the GNU Lesser General Public License Version 3 or the Perl Artistic
 License Version 2.0.

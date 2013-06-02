@@ -1,7 +1,7 @@
 // -*- mode: C++; c-file-style: "cc-mode" -*-
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder. This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder. This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License.
 // Version 2.0.
@@ -40,7 +40,7 @@ Verilated::Serialized Verilated::s_s;
 VL_THREAD const VerilatedScope* Verilated::t_dpiScopep = NULL;
 VL_THREAD const char* Verilated::t_dpiFilename = "";
 VL_THREAD int Verilated::t_dpiLineno = 0;
-VL_THREAD struct Verilated::VerilatedCommandArgs Verilated::s_args = {0, NULL};
+struct Verilated::CommandArgValues Verilated::s_args = {0, NULL};
 
 VerilatedImp  VerilatedImp::s_s;
 
@@ -87,6 +87,7 @@ Verilated::Serialized::Serialized() {
     s_calcUnusedSigs = false;
     s_gotFinish = false;
     s_assertOn = true;
+    s_fatalOnVpiError = true; // retains old default behaviour
 }
 
 //===========================================================================
@@ -602,7 +603,7 @@ IData _vl_vsscanf(FILE* fp,  // If a fscanf
 		    _vl_vsss_read(fp,floc,fromp, tmp, "0123456789+-xXzZ?_");
 		    if (!tmp[0]) goto done;
 		    vlsint64_t ld;
-		    sscanf(tmp,"%" VL_PRI64 "d",&ld);
+		    sscanf(tmp,"%30" VL_PRI64 "d",&ld);
 		    VL_SET_WQ(owp,ld);
 		    break;
 		}
@@ -623,7 +624,7 @@ IData _vl_vsscanf(FILE* fp,  // If a fscanf
 		    _vl_vsss_read(fp,floc,fromp, tmp, "0123456789+-xXzZ?_");
 		    if (!tmp[0]) goto done;
 		    QData ld;
-		    sscanf(tmp,"%" VL_PRI64 "u",&ld);
+		    sscanf(tmp,"%30" VL_PRI64 "u",&ld);
 		    VL_SET_WQ(owp,ld);
 		    break;
 		}
@@ -976,7 +977,7 @@ IData VL_VALUEPLUSARGS_IW(int rbits, const char* prefixp, char fmt, WDataOutP rw
 	break;
     case 'd':
 	vlsint64_t ld;
-	sscanf(dp,"%" VL_PRI64 "d",&ld);
+	sscanf(dp,"%30" VL_PRI64 "d",&ld);
 	VL_SET_WQ(rwp,ld);
 	break;
     case 'b':
@@ -1074,6 +1075,10 @@ const char* Verilated::commandArgsPlusMatch(const char* prefixp) {
     return VerilatedImp::argPlusMatch(prefixp).c_str();
 }
 
+void Verilated::internalsDump() {
+    VerilatedImp::internalsDump();
+}
+
 void Verilated::scopesDump() {
     VerilatedImp::scopesDump();
 }
@@ -1100,6 +1105,7 @@ VerilatedModule::~VerilatedModule() {
 //======================================================================
 // VerilatedVar:: Methods
 
+// cppcheck-suppress unusedFunction  // Used by applications
 vluint32_t VerilatedVar::entSize() const {
     vluint32_t size = 1;
     switch (vltype()) {
@@ -1196,6 +1202,7 @@ void VerilatedScope::varInsert(int finalize, const char* namep, void* datap,
     m_varsp->insert(make_pair(namep,var));
 }
 
+// cppcheck-suppress unusedFunction  // Used by applications
 VerilatedVar* VerilatedScope::varFind(const char* namep) const {
     if (VL_LIKELY(m_varsp)) {
 	VerilatedVarNameMap::iterator it = m_varsp->find(namep);

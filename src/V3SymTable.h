@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -53,6 +53,8 @@ private:
     VSymEnt*	m_parentp;	// Table that created this table, dot notation needed to resolve into it
     AstPackage*	m_packagep;	// Package node is in (for V3LinkDot, unused here)
     string	m_symPrefix;	// String to prefix symbols with (for V3LinkDot, unused here)
+    bool	m_exported;	// Allow importing
+    bool	m_imported;	// Was imported
 #ifdef VL_DEBUG
     static int debug() {
 	static int level = -1;
@@ -86,6 +88,7 @@ public:
     }
 
     // METHODS
+    VSymEnt(VSymGraph* graphp, const VSymEnt* symp);  // Below
     VSymEnt(VSymGraph* graphp, AstNode* nodep);  // Below
     ~VSymEnt() {
 	// Change links so we coredump if used
@@ -107,6 +110,10 @@ public:
     AstNode* nodep() const { if (!this) return NULL; else return m_nodep; }  // null check so can call .findId(...)->nodep()
     string symPrefix() const { return m_symPrefix; }
     void symPrefix(const string& name) { m_symPrefix = name; }
+    bool exported() const { return m_exported; }
+    void exported(bool flag) { m_exported = flag; }
+    bool imported() const { return m_imported; }
+    void imported(bool flag) { m_imported = flag; }
     void insert(const string& name, VSymEnt* entp) {
 	UINFO(9, "     SymInsert se"<<(void*)this<<" '"<<name<<"' se"<<(void*)entp<<"  "<<entp->nodep()<<endl);
 	if (name != "" && m_idNameMap.find(name) != m_idNameMap.end()) {
@@ -130,11 +137,11 @@ public:
     VSymEnt* findIdFlat(const string& name) const {
 	// Find identifier without looking upward through symbol hierarchy
 	// First, scan this begin/end block or module for the name
-	IdNameMap::const_iterator iter = m_idNameMap.find(name);
+	IdNameMap::const_iterator it = m_idNameMap.find(name);
 	UINFO(9, "     SymFind   se"<<(void*)this<<" '"<<name
-	      <<"' -> "<<(iter == m_idNameMap.end() ? "NONE"
-			  : "se"+cvtToStr((void*)(iter->second))+" n="+cvtToStr((void*)(iter->second->nodep())))<<endl);
-	if (iter != m_idNameMap.end()) return (iter->second);
+	      <<"' -> "<<(it == m_idNameMap.end() ? "NONE"
+			  : "se"+cvtToStr((void*)(it->second))+" n="+cvtToStr((void*)(it->second->nodep())))<<endl);
+	if (it != m_idNameMap.end()) return (it->second);
 	return NULL;
     }
     VSymEnt* findIdFallback(const string& name) const {
@@ -145,23 +152,48 @@ public:
 	if (m_fallbackp) return m_fallbackp->findIdFallback(name);
 	return NULL;
     }
-    bool import(const VSymEnt* srcp, const string& id_or_star) {
+private:
+    bool importOneSymbol(VSymGraph* graphp, const string& name, const VSymEnt* srcp) {
+	if (srcp->exported()
+	    && !findIdFlat(name)) {  // Don't insert over existing entry
+	    VSymEnt* symp = new VSymEnt(graphp, srcp);
+	    symp->exported(false);  // Can't reimport an import without an export
+	    symp->imported(true);
+	    reinsert(name, symp);
+	    return true;
+	} else {
+	    return false;
+	}
+    }
+public:
+    bool importFromPackage(VSymGraph* graphp, const VSymEnt* srcp, const string& id_or_star) {
 	// Import tokens from source symbol table into this symbol table
 	// Returns true if successful
 	bool any = false;
 	if (id_or_star != "*") {
 	    IdNameMap::const_iterator it = srcp->m_idNameMap.find(id_or_star);
 	    if (it != m_idNameMap.end()) {
-		reinsert(it->first, it->second);
-		any = true;
+		importOneSymbol(graphp, it->first, it->second);
 	    }
+	    any = true;  // Legal, though perhaps lint questionable to import nothing
 	} else {
 	    for (IdNameMap::const_iterator it=srcp->m_idNameMap.begin(); it!=srcp->m_idNameMap.end(); ++it) {
-		reinsert(it->first, it->second);
-		any = true;
+		if (importOneSymbol(graphp, it->first, it->second)) any = true;
 	    }
 	}
 	return any;
+    }
+    void importFromIface(VSymGraph* graphp, const VSymEnt* srcp) {
+	// Import interface tokens from source symbol table into this symbol table, recursively
+	UINFO(9, "     importIf  se"<<(void*)this<<" from se"<<(void*)srcp<<endl);
+	for (IdNameMap::const_iterator it=srcp->m_idNameMap.begin(); it!=srcp->m_idNameMap.end(); ++it) {
+	    const string& name = it->first;
+	    VSymEnt* srcp = it->second;
+	    VSymEnt* symp = new VSymEnt(graphp, srcp);
+	    reinsert(name, symp);
+	    // And recurse to create children
+	    srcp->importFromIface(graphp, symp);
+	}
     }
     void cellErrorScopes(AstNode* lookp, string prettyName="") {
 	if (prettyName=="") prettyName = lookp->prettyName();
@@ -205,10 +237,10 @@ public:
 	VSymMap doneSyms;
 	os<<"SymEnt Dump:\n";
 	m_symRootp->dumpIterate(os, doneSyms, indent, 9999, "$root");
-	bool first = false;
+	bool first = true;
 	for (SymStack::iterator it = m_symsp.begin(); it != m_symsp.end(); ++it) {
 	    if (doneSyms.find(*it) == doneSyms.end()) {
-		if (!first++) os<<"%%Warning: SymEnt Orphans:\n";
+		if (first) { first=false; os<<"%%Warning: SymEnt Orphans:\n"; }
 		(*it)->dumpIterate(os, doneSyms, indent, 9999, "Orphan");
 	    }
 	}
@@ -236,7 +268,7 @@ public:
 
 //######################################################################
 
-inline VSymEnt::VSymEnt(VSymGraph* m_graphp, AstNode* nodep)
+inline VSymEnt::VSymEnt(VSymGraph* graphp, AstNode* nodep)
     : m_nodep(nodep) {
     // No argument to set fallbackp, as generally it's wrong to set it in the new call,
     // Instead it needs to be set on a "findOrNew()" return, as it may have been new'ed
@@ -244,7 +276,19 @@ inline VSymEnt::VSymEnt(VSymGraph* m_graphp, AstNode* nodep)
     m_fallbackp = NULL;
     m_parentp = NULL;
     m_packagep = NULL;
-    m_graphp->pushNewEnt(this);
+    m_exported = true;
+    m_imported = false;
+    graphp->pushNewEnt(this);
+}
+
+inline VSymEnt::VSymEnt(VSymGraph* graphp, const VSymEnt* symp)
+    : m_nodep(symp->nodep()) {
+    m_fallbackp = symp->m_fallbackp;
+    m_parentp  = symp->m_parentp;
+    m_packagep = symp->m_packagep;
+    m_exported = symp->m_exported;
+    m_imported = symp->m_imported;
+    graphp->pushNewEnt(this);
 }
 
 #endif // guard

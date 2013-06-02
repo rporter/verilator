@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -36,6 +36,7 @@
 
 class V3OptionsImp;
 class FileLine;
+struct stat;
 
 typedef vector<string> V3StringList;
 typedef set<string> V3StringSet;
@@ -75,6 +76,8 @@ class V3Options {
     bool	m_lintOnly;	// main switch: --lint-only
     bool	m_outFormatOk;	// main switch: --cc, --sc or --sp was specified
     bool	m_warnFatal;	// main switch: --warnFatal
+    bool	m_pinsScUint;   // main switch: --pins-sc-uint
+    bool	m_pinsScBigUint;// main switch: --pins-sc-biguint
     bool	m_pinsUint8;	// main switch: --pins-uint8
     bool	m_profileCFuncs;// main switch: --profile-cfuncs
     bool	m_psl;		// main switch: --psl
@@ -88,6 +91,7 @@ class V3Options {
     bool	m_traceDups;	// main switch: --trace-dups
     bool	m_traceUnderscore;// main switch: --trace-underscore
     bool	m_underlineZero;// main switch: --underline-zero; undocumented old Verilator 2
+    bool	m_reportUnoptflat; // main switch: --report-unoptflat
     bool	m_xInitialEdge;	// main switch: --x-initial-edge
     bool	m_xmlOnly;	// main switch: --xml-netlist
 
@@ -130,6 +134,7 @@ class V3Options {
     bool	m_oCase;	// main switch: -Oe: case tree conversion
     bool	m_oCombine;	// main switch: -Ob: common icode packing
     bool	m_oConst;	// main switch: -Oc: constant folding
+    bool	m_oDedupe;	// main switch: -Od: logic deduplication
     bool	m_oExpand;	// main switch: -Ox: expansion of C macros
     bool	m_oFlopGater;	// main switch: -Of: flop gater detection
     bool	m_oGate;	// main switch: -Og: gate wire elimination
@@ -150,7 +155,7 @@ class V3Options {
     void addFuture(const string& flag);
     void addIncDirUser(const string& incdir);  // User requested
     void addIncDirFallback(const string& incdir);  // Low priority if not found otherwise
-    void addLangExt(const string &langext, const V3LangCode lc);
+    void addLangExt(const string& langext, const V3LangCode& lc);
     void addLibExtV(const string& libext);
     void optimize(int level);
     void showVersion(bool verbose);
@@ -158,7 +163,7 @@ class V3Options {
     bool onoff(const char* sw, const char* arg, bool& flag);
     bool suffixed(const char* sw, const char* arg);
     string parseFileArg(const string& optdir, const string& relfilename);
-    bool parseLangExt(const char* swp, const char* langswp, const V3LangCode lc);
+    bool parseLangExt(const char* swp, const char* langswp, const V3LangCode& lc);
     string filePathCheckOneDir(const string& modname, const string& dirname);
 
     static string getenvStr(const string& envvar, const string& defaultValue);
@@ -212,6 +217,8 @@ class V3Options {
     bool outFormatOk() const { return m_outFormatOk; }
     bool keepTempFiles() const { return (V3Error::debugDefault()!=0); }
     bool warnFatal() const { return m_warnFatal; }
+    bool pinsScUint() const { return m_pinsScUint; }
+    bool pinsScBigUint() const { return m_pinsScBigUint; }
     bool pinsUint8() const { return m_pinsUint8; }
     bool profileCFuncs() const { return m_profileCFuncs; }
     bool psl() const { return m_psl; }
@@ -220,6 +227,7 @@ class V3Options {
     bool lintOnly() const { return m_lintOnly; }
     bool ignc() const { return m_ignc; }
     bool inhibitSim() const { return m_inhibitSim; }
+    bool reportUnoptflat() const { return m_reportUnoptflat; }
     bool xInitialEdge() const { return m_xInitialEdge; }
     bool xmlOnly() const { return m_xmlOnly; }
 
@@ -265,6 +273,7 @@ class V3Options {
     bool oCase() const { return m_oCase; }
     bool oCombine() const { return m_oCombine; }
     bool oConst() const { return m_oConst; }
+    bool oDedupe() const { return m_oDedupe; }
     bool oExpand() const { return m_oExpand; }
     bool oFlopGater() const { return m_oFlopGater; }
     bool oGate() const { return m_oGate; }
@@ -321,6 +330,7 @@ class V3Options {
     V3LangCode fileLanguage(const string &filename);
     static bool fileStatDir (const string& filename);
     static bool fileStatNormal (const string& filename);
+    static void fileNfsFlush(const string& filename);
 
     // METHODS (other OS)
     static void throwSigsegv();

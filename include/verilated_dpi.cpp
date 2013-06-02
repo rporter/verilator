@@ -1,7 +1,7 @@
 // -*- mode: C++; c-file-style: "cc-mode" -*-
 //*************************************************************************
 //
-// Copyright 2009-2012 by Wilson Snyder. This program is free software; you can
+// Copyright 2009-2013 by Wilson Snyder. This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License.
 // Version 2.0.
@@ -102,9 +102,6 @@ int svHigh(const svOpenArrayHandle h, int d) {
     _VL_SVDPI_UNIMP(); return 0;
 }
 int svIncrement(const svOpenArrayHandle h, int d) {
-    _VL_SVDPI_UNIMP(); return 0;
-}
-int svLength(const svOpenArrayHandle h, int d) {
     _VL_SVDPI_UNIMP(); return 0;
 }
 int svDimensions(const svOpenArrayHandle h) {

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -75,10 +75,10 @@ private:
 	        return "Inlined leading underscore";
         }
 	if ((int)nodep->width() > v3Global.opt.traceMaxWidth()) return "Wide bus > --trace-max-width bits";
-	if ((int)nodep->dtypep()->arrayElements() > v3Global.opt.traceMaxArray()) return "Wide memory > --trace-max-array ents";
+	if ((int)nodep->dtypep()->arrayUnpackedElements() > v3Global.opt.traceMaxArray()) return "Wide memory > --trace-max-array ents";
 	if (!(nodep->dtypeSkipRefp()->castBasicDType()
-	      || (nodep->dtypeSkipRefp()->castArrayDType()
-		  && (nodep->dtypeSkipRefp()->castArrayDType()->subDTypep()
+	      || (nodep->dtypeSkipRefp()->castUnpackArrayDType()
+		  && (nodep->dtypeSkipRefp()->castUnpackArrayDType()->subDTypep()
 		      ->skipRefp()->castBasicDType())))) {
 	    return "Unsupported: Multi-dimensional array";
 	}

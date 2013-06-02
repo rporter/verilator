@@ -1,7 +1,7 @@
 // -*- mode: C++; c-file-style: "cc-mode" -*-
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder. This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder. This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License.
 // Version 2.0.
@@ -28,6 +28,7 @@
 #ifndef _VERILATED_H_
 #define _VERILATED_H_ 1 ///< Header Guard
 
+#include "verilated_config.h"
 #include "verilatedos.h"
 
 #include <cassert>
@@ -229,6 +230,7 @@ private:
 	bool		s_calcUnusedSigs;	///< Waves file on, need all signals calculated
 	bool		s_gotFinish;		///< A $finish statement executed
 	bool		s_assertOn;		///< Assertions are enabled
+        bool		s_fatalOnVpiError;	///< Stop on vpi error/unsupported
 	Serialized();
     } s_s;
 
@@ -236,9 +238,11 @@ private:
     static VL_THREAD const char*	t_dpiFilename;	///< DPI context filename
     static VL_THREAD int		t_dpiLineno;	///< DPI context line number
 
-    static struct VerilatedCommandArgs {
+    // no need to be save-restored (serialized) the
+    // assumption is that the restore is allowed to pass different arguments
+    static struct CommandArgValues {
 	int          argc;
-        const char** argv;
+	const char** argv;
     } s_args;
 
 public:
@@ -273,6 +277,9 @@ public:
     /// Enable/disable assertions
     static void assertOn(bool flag) { s_s.s_assertOn=flag; }
     static bool assertOn() { return s_s.s_assertOn; }
+    /// Enable/disable vpi fatal
+    static void fatalOnVpiError(bool flag) { s_s.s_fatalOnVpiError=flag; }
+    static bool fatalOnVpiError() { return s_s.s_fatalOnVpiError; }
     /// Flush callback for VCD waves
     static void flushCb(VerilatedVoidCb cb);
     static void flushCall() { if (s_flushCb) (*s_flushCb)(); }
@@ -280,8 +287,17 @@ public:
     /// Record command line arguments, for retrieval by $test$plusargs/$value$plusargs
     static void commandArgs(int argc, const char** argv);
     static void commandArgs(int argc, char** argv) { commandArgs(argc,(const char**)argv); }
-    static struct VerilatedCommandArgs* getCommandArgs() {return &s_args;}
+    static CommandArgValues* getCommandArgs() {return &s_args;}
     static const char* commandArgsPlusMatch(const char* prefixp);
+
+    /// Produce name & version for (at least) VPI
+    static const char* productName() { return VERILATOR_PRODUCT; }
+    static const char* productVersion() { return VERILATOR_VERSION; }
+
+    /// For debugging, print much of the Verilator internal state.
+    /// The output of this function may change in future
+    /// releases - contact the authors before production use.
+    static void internalsDump();
 
     /// For debugging, print text list of all scope names with
     /// dpiImport/Export context.  This function may change in future
@@ -536,6 +552,7 @@ static inline void VL_ASSIGNBIT_WO(int, int bit, WDataOutP owp, IData) {
 //===================================================================
 // SYSTEMC OPERATORS
 // Copying verilog format to systemc integers and bit vectors.
+// Get a SystemC variable
 
 #define VL_ASSIGN_ISI(obits,vvar,svar) { (vvar) = VL_CLEAN_II((obits),(obits),(svar).read()); }
 #define VL_ASSIGN_QSQ(obits,vvar,svar) { (vvar) = VL_CLEAN_QQ((obits),(obits),(svar).read()); }
@@ -553,7 +570,21 @@ static inline void VL_ASSIGNBIT_WO(int, int bit, WDataOutP owp, IData) {
     owp[words-1] &= VL_MASK_I(obits); \
 }
 
+#define VL_ASSIGN_ISU(obits,vvar,svar) { (vvar) = VL_CLEAN_II((obits),(obits),(svar).read().to_uint()); }
+#define VL_ASSIGN_QSU(obits,vvar,svar) { (vvar) = VL_CLEAN_QQ((obits),(obits),(svar).read().to_uint64()); }
+#define VL_ASSIGN_WSB(obits,owp,svar) {                       \
+    int words = VL_WORDS_I(obits);                            \
+    sc_biguint<obits> _butemp = (svar).read();                \
+    for (int i=0; i < words; i++) {                           \
+        int msb = ((i+1)*VL_WORDSIZE) - 1;                    \
+        msb = (msb >= obits) ? (obits-1) : msb;               \
+        owp[i] = _butemp.range(msb,i*VL_WORDSIZE).to_uint();  \
+    }                                                         \
+    owp[words-1] &= VL_MASK_I(obits);                         \
+}
+
 // Copying verilog format from systemc integers and bit vectors.
+// Set a SystemC variable
 
 #define VL_ASSIGN_SII(obits,svar,vvar) { (svar).write(vvar); }
 #define VL_ASSIGN_SQQ(obits,svar,vvar) { (svar).write(vvar); }
@@ -573,6 +604,20 @@ static inline void VL_ASSIGNBIT_WO(int, int bit, WDataOutP owp, IData) {
     sc_bv<obits> _bvtemp; \
     for (int i=0; i < VL_WORDS_I(obits); i++) _bvtemp.set_word(i,rwp[i]); \
     svar.write(_bvtemp); \
+}
+
+#define VL_ASSIGN_SUI(obits,svar,rd) { (svar).write(rd); }
+#define VL_ASSIGN_SUQ(obits,svar,rd) { (svar).write(rd); }
+#define VL_ASSIGN_SBI(obits,svar,rd) { (svar).write(rd); }
+#define VL_ASSIGN_SBQ(obits,svar,rd) { (svar).write(rd); }
+#define VL_ASSIGN_SBW(obits,svar,rwp) {             \
+    sc_biguint<obits> _butemp;                      \
+    for (int i=0; i < VL_WORDS_I(obits); i++) {     \
+        int msb = ((i+1)*VL_WORDSIZE) - 1;          \
+        msb = (msb >= obits) ? (obits-1) : msb;     \
+        _butemp.range(msb,i*VL_WORDSIZE) = rwp[i];  \
+    }                                               \
+    svar.write(_butemp);                            \
 }
 
 //===================================================================

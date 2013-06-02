@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -115,7 +115,7 @@ private:
 	m_forVarp = initAssp->lhsp()->castVarRef()->varp();
 	m_forVscp = initAssp->lhsp()->castVarRef()->varScopep();
 	if (nodep->castGenFor() && !m_forVarp->isGenVar()) {
-	    nodep->v3error("Non-genvar used in generate for: "<<m_forVarp->name()<<endl);
+	    nodep->v3error("Non-genvar used in generate for: "<<m_forVarp->prettyName()<<endl);
 	}
 	if (m_generate) V3Const::constifyParamsEdit(initAssp->rhsp());  // rhsp may change
 	AstConst* constInitp = initAssp->rhsp()->castConst();

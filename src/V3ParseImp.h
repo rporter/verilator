@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2009-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2009-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -66,6 +66,7 @@ struct V3ParseBisonYYSType {
 	AstCell*	cellp;
 	AstConst*	constp;
 	AstMemberDType*	memberp;
+	AstModportVarRef* modportvarrefp;
 	AstNodeModule*	modulep;
 	AstNodeClassDType* classp;
 	AstNodeDType*	dtypep;
@@ -74,8 +75,10 @@ struct V3ParseBisonYYSType {
 	AstNodeSenItem*	senitemp;
 	AstNodeVarRef*	varnodep;
 	AstPackage*	packagep;
+	AstPackageRef*	packagerefp;
 	AstParseRef*	parserefp;
 	AstPatMember*	patmemberp;
+	AstPattern*	patternp;
 	AstPin*		pinp;
 	AstRange*	rangep;
 	AstSenTree*	sentreep;

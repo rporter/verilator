@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -64,6 +64,7 @@ private:
     bool	m_checkBlock;	// Should this block get covered?
     AstNodeModule*	m_modp;	// Current module to add statement to
     bool	m_inToggleOff;	// In function/task etc
+    bool	m_inModOff;	// In module with no coverage
     FileMap	m_fileps;	// Column counts for each fileline
     string	m_beginHier;	// AstBegin hier name for user coverage points
 
@@ -86,7 +87,7 @@ private:
 	    if (prettyName.find("._") != string::npos)
 	        return "Inlined leading underscore";
 	}
-	if ((nodep->width()*nodep->dtypep()->arrayElements()) > 256) return "Wide bus/array > 256 bits";
+	if ((nodep->width()*nodep->dtypep()->arrayUnpackedElements()) > 256) return "Wide bus/array > 256 bits";
 	// We allow this, though tracing doesn't
 	// if (nodep->arrayp(1)) return "Unsupported: Multi-dimensional array";
 	return NULL;
@@ -124,9 +125,11 @@ private:
     // VISITORS - BOTH
     virtual void visit(AstNodeModule* nodep, AstNUser*) {
 	m_modp = nodep;
+	m_inModOff = nodep->isTop();   // Ignore coverage on top module; it's a shell we created
 	m_fileps.clear();
 	nodep->iterateChildren(*this);
 	m_modp = NULL;
+	m_inModOff = true;
     }
 
     // VISITORS - TOGGLE COVERAGE
@@ -140,7 +143,7 @@ private:
     }
     virtual void visit(AstVar* nodep, AstNUser*) {
 	nodep->iterateChildren(*this);
-	if (m_modp && !m_inToggleOff
+	if (m_modp && !m_inModOff && !m_inToggleOff
 	    && nodep->fileline()->coverageOn() && v3Global.opt.coverageToggle()) {
 	    const char* disablep = varIgnoreToggle(nodep);
 	    if (disablep) {
@@ -209,7 +212,7 @@ private:
 				varp, chgVarp);
 	    }
 	}
-	else if (AstArrayDType* adtypep = dtypep->castArrayDType()) {
+	else if (AstUnpackArrayDType* adtypep = dtypep->castUnpackArrayDType()) {
 	    for (int index_docs=adtypep->lsb(); index_docs<=adtypep->msb()+1; ++index_docs) {
 		int index_code = index_docs - adtypep->lsb();
 		ToggleEnt newent (above.m_comment+string("[")+cvtToStr(index_docs)+"]",
@@ -231,7 +234,7 @@ private:
 	UINFO(4," IF: "<<nodep<<endl);
 	if (m_checkBlock) {
 	    nodep->ifsp()->iterateAndNext(*this);
-	    if (m_checkBlock
+	    if (m_checkBlock && !m_inModOff
 		&& nodep->fileline()->coverageOn() && v3Global.opt.coverageLine()) {	// if a "if" branch didn't disable it
 		if (!nodep->backp()->castIf()
 		    || nodep->backp()->castIf()->elsesp()!=nodep) {  // Ignore if else; did earlier
@@ -243,7 +246,7 @@ private:
 	    if (nodep->elsesp()) {
 		m_checkBlock = true;
 		nodep->elsesp()->iterateAndNext(*this);
-		if (m_checkBlock
+		if (m_checkBlock && !m_inModOff
 		    && nodep->fileline()->coverageOn() && v3Global.opt.coverageLine()) {	// if a "else" branch didn't disable it
 		    UINFO(4,"   COVER: "<<nodep<<endl);
 		    if (nodep->elsesp()->castIf()) {
@@ -258,7 +261,7 @@ private:
     }
     virtual void visit(AstCaseItem* nodep, AstNUser*) {
 	UINFO(4," CASEI: "<<nodep<<endl);
-	if (m_checkBlock
+	if (m_checkBlock && !m_inModOff
 	    && nodep->fileline()->coverageOn() && v3Global.opt.coverageLine()) {
 	    nodep->bodysp()->iterateAndNext(*this);
 	    if (m_checkBlock) {	// if the case body didn't disable it
@@ -327,6 +330,7 @@ public:
 	m_checkBlock = true;
 	m_beginHier = "";
 	m_inToggleOff = false;
+	m_inModOff = true;
 	rootp->iterateChildren(*this);
     }
     virtual ~CoverageVisitor() {}

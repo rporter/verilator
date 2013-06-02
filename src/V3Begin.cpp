@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -153,7 +153,7 @@ private:
 	AstNode* addsp = NULL;
 	if (AstNode* stmtsp = nodep->stmtsp()) {
 	    stmtsp->unlinkFrBackWithNext();
-	    addsp = addsp->addNextNull(stmtsp);
+	    if (addsp) { addsp = addsp->addNextNull(stmtsp); } else { addsp = stmtsp; }
 	}
 	if (addsp) {
 	    nodep->replaceWith(addsp);

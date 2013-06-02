@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2004-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2004-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -440,6 +440,10 @@ class EmitVBaseVisitor : public EmitCBaseVisitor {
     virtual void visit(AstAttrOf* nodep, AstNUser*) {
 	putfs(nodep,"$_ATTROF(");
 	nodep->fromp()->iterateAndNext(*this);
+	if (nodep->dimp()) {
+	    putbs(",");
+	    nodep->dimp()->iterateAndNext(*this);
+	}
 	puts(")");
     }
     virtual void visit(AstNodeCond* nodep, AstNUser*) {
@@ -495,10 +499,10 @@ class EmitVBaseVisitor : public EmitCBaseVisitor {
     }
     virtual void visit(AstConstDType* nodep, AstNUser*) {
 	putfs(nodep,"const ");
-	nodep->subDTypep()->iterateAndNext(*this);
+	nodep->subDTypep()->accept(*this);
     }
-    virtual void visit(AstArrayDType* nodep, AstNUser*) {
-	nodep->subDTypep()->iterateAndNext(*this);
+    virtual void visit(AstNodeArrayDType* nodep, AstNUser*) {
+	nodep->subDTypep()->accept(*this);
 	nodep->rangep()->iterateAndNext(*this);
     }
     virtual void visit(AstNodeClassDType* nodep, AstNUser*) {
@@ -509,7 +513,7 @@ class EmitVBaseVisitor : public EmitCBaseVisitor {
 	puts("}");
     }
     virtual void visit(AstMemberDType* nodep, AstNUser*) {
-	nodep->subDTypep()->iterateAndNext(*this);
+	nodep->subDTypep()->accept(*this);
 	puts(" ");
 	puts(nodep->name());
 	puts("}");

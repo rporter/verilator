@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -764,6 +764,7 @@ void AstNode::iterateAndNext(AstNVisitor& v, AstNUser* vup) {
     while (nodep) {
 	AstNode* niterp = nodep;  // This address may get stomped via m_iterpp if the node is edited
 	ASTNODE_PREFETCH(nodep->m_nextp);
+	// cppcheck-suppress nullPointer
 	niterp->m_iterpp = &niterp;
 	niterp->accept(v, vup);
 	// accept may do a replaceNode and change niterp on us...
@@ -1041,7 +1042,7 @@ void AstNode::v3errorEnd(ostringstream& str) const {
 	nsstr<<str.str();
 	if (debug()) {
 	    nsstr<<endl;
-	    nsstr<<"-node: "<<this<<endl;
+	    nsstr<<"-node: "; ((AstNode*)this)->dump(nsstr); nsstr<<endl;
 	}
 	m_fileline->v3errorEnd(nsstr);
     } else {
@@ -1067,8 +1068,7 @@ void AstNode::dtypeChgWidth(int width, int widthMin) {
     dtypeChgWidthSigned(width, widthMin, dtypep()->numeric());
 }
 
-void AstNode::dtypeChgWidthSigned(int width, int widthMin, bool issigned) {
-    AstNumeric numeric = issigned ? AstNumeric::SIGNED : AstNumeric::UNSIGNED;
+void AstNode::dtypeChgWidthSigned(int width, int widthMin, AstNumeric numeric) {
     if (!dtypep()) {
 	// We allow dtypep() to be null, as before/during widthing dtypes are not resolved
 	dtypeSetLogicSized(width, widthMin, numeric);
@@ -1098,6 +1098,10 @@ AstNodeDType* AstNode::findBitDType(int width, int widthMin, AstNumeric numeric)
 AstNodeDType* AstNode::findLogicDType(int width, int widthMin, AstNumeric numeric) const {
     return v3Global.rootp()->typeTablep()
 	->findLogicBitDType(fileline(), AstBasicDTypeKwd::LOGIC, width, widthMin, numeric);
+}
+AstNodeDType* AstNode::findLogicRangeDType(VNumRange range, int widthMin, AstNumeric numeric) const {
+    return v3Global.rootp()->typeTablep()
+	->findLogicBitDType(fileline(), AstBasicDTypeKwd::LOGIC, range, widthMin, numeric);
 }
 AstBasicDType* AstNode::findInsertSameDType(AstBasicDType* nodep) {
     return v3Global.rootp()->typeTablep()

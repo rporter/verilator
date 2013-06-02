@@ -3,7 +3,7 @@
 //
 // THIS MODULE IS PUBLICLY LICENSED
 //
-// Copyright 2001-2012 by Wilson Snyder.  This program is free software;
+// Copyright 2001-2013 by Wilson Snyder.  This program is free software;
 // you can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License Version 2.0.
 //
@@ -141,6 +141,7 @@ void VerilatedVcd::openNext (bool incFilename) {
     if (m_filename[0]=='|') {
 	assert(0);	// Not supported yet.
     } else {
+	// cppcheck-suppress duplicateExpression
 	m_fd = ::open (m_filename.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_LARGEFILE|O_NONBLOCK
 		       , 0666);
 	if (m_fd<0) {
@@ -156,6 +157,8 @@ void VerilatedVcd::openNext (bool incFilename) {
 
 void VerilatedVcd::makeNameMap() {
     // Take signal information from each module and build m_namemapp
+    deleteNameMap();
+    m_nextCode = 1;
     m_namemapp = new NameMap;
     for (vluint32_t ent = 0; ent< m_callbacks.size(); ent++) {
 	VerilatedVcdCallInfo *cip = m_callbacks[ent];
@@ -182,15 +185,20 @@ void VerilatedVcd::makeNameMap() {
 	    newname += hiername;
 	    newmapp->insert(make_pair(newname,decl));
 	}
-	delete m_namemapp; m_namemapp=NULL;
+	deleteNameMap();
 	m_namemapp = newmapp;
     }
+}
+
+void VerilatedVcd::deleteNameMap() {
+    if (m_namemapp) { delete m_namemapp; m_namemapp=NULL; }
 }
 
 VerilatedVcd::~VerilatedVcd() {
     close();
     if (m_wrBufp) { delete[] m_wrBufp; m_wrBufp=NULL; }
     if (m_sigs_oldvalp) { delete[] m_sigs_oldvalp; m_sigs_oldvalp=NULL; }
+    deleteNameMap();
     // Remove from list of traces
     vector<VerilatedVcd*>::iterator pos = find(s_vcdVecp.begin(), s_vcdVecp.end(), this);
     if (pos != s_vcdVecp.end()) { s_vcdVecp.erase(pos); }
@@ -413,7 +421,7 @@ void VerilatedVcd::dumpHeader () {
     assert (m_modDepth==0);
 
     // Reclaim storage
-    delete m_namemapp;
+    deleteNameMap();
 }
 
 void VerilatedVcd::module (string name) {

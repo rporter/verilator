@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -102,7 +102,7 @@ class EmitCSyms : EmitCBaseVisitor {
 	    if (rsvd != "") {
 		// Generally V3Name should find all of these and throw SYMRSVDWORD.
 		// We'll still check here because the compiler errors resulting if we miss this warning are SO nasty
-		nodep->v3error("Symbol matching "+rsvd+" reserved word reached emitter, should have hit SYMRSVDWORD: '"<<nodep->name()<<"'");
+		nodep->v3error("Symbol matching "+rsvd+" reserved word reached emitter, should have hit SYMRSVDWORD: '"<<nodep->prettyName()<<"'");
 	    }
 	}
     }
@@ -168,8 +168,8 @@ class EmitCSyms : EmitCBaseVisitor {
 	varsExpand();
 
 	// Sort by names, so line/process order matters less
-	sort(m_scopes.begin(), m_scopes.end(), CmpName());
-	sort(m_dpis.begin(), m_dpis.end(), CmpDpi());
+	stable_sort(m_scopes.begin(), m_scopes.end(), CmpName());
+	stable_sort(m_dpis.begin(), m_dpis.end(), CmpDpi());
 
 	// Output
 	emitSymHdr();
@@ -454,29 +454,30 @@ void EmitCSyms::emitSymImp() {
 	    AstScope* scopep = it->second.m_scopep;
 	    AstVar* varp = it->second.m_varp;
 	    //
-	    int dim=0;
+	    int pdim=0;
+	    int udim=0;
 	    string bounds;
 	    if (AstBasicDType* basicp = varp->basicp()) {
 		// Range is always first, it's not in "C" order
 		if (basicp->isRanged()) {
 		    bounds += " ,"; bounds += cvtToStr(basicp->msb());
 		    bounds += ","; bounds += cvtToStr(basicp->lsb());
-		    dim++;
+		    pdim++;
 		}
 		for (AstNodeDType* dtypep=varp->dtypep(); dtypep; ) {
 		    dtypep = dtypep->skipRefp();  // Skip AstRefDType/AstTypedef, or return same node
-		    if (AstArrayDType* adtypep = dtypep->castArrayDType()) {
+		    if (AstNodeArrayDType* adtypep = dtypep->castNodeArrayDType()) {
 			bounds += " ,"; bounds += cvtToStr(adtypep->msb());
 			bounds += ","; bounds += cvtToStr(adtypep->lsb());
-			dim++;
+			if (dtypep->castPackArrayDType()) pdim++; else udim++;
 			dtypep = adtypep->subDTypep();
 		    }
 		    else break; // AstBasicDType - nothing below, 1
 		}
 	    }
 	    //
-	    if (dim>2) {
-		puts("//UNSUP ");  // VerilatedImp can't deal with >2d arrays
+	    if (pdim>1 || udim>1) {
+		puts("//UNSUP ");  // VerilatedImp can't deal with >2d or packed arrays
 	    }
 	    puts("__Vscope_"+it->second.m_scopeName+".varInsert(__Vfinal,");
 	    putsQuoted(it->second.m_varBasePretty);
@@ -496,7 +497,7 @@ void EmitCSyms::emitSymImp() {
 	    if (varp->isSigUserRWPublic()) puts("|VLVF_PUB_RW");
 	    else if (varp->isSigUserRdPublic()) puts("|VLVF_PUB_RD");
 	    puts(",");
-	    puts(cvtToStr(dim));
+	    puts(cvtToStr(pdim+udim));
 	    puts(bounds);
 	    puts(");\n");
 	}

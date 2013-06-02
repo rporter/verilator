@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -621,6 +621,16 @@ bool V3Number::isLt(const V3Number& rhs) const {
 	if (this->bitIs1(bit) && rhs.bitIs0(bit)) { return 1; }
 	if (rhs.bitIs1(bit) && this->bitIs0(bit)) { return 0; }
 	if (this->bitIsXZ(bit)) { return 0; }
+	if (rhs.bitIsXZ(bit)) { return 0; }
+    }
+    return 0;
+}
+bool V3Number::isLtXZ(const V3Number& rhs) const {
+    // Include X/Z in comparisons for sort ordering
+    for (int bit=0; bit<max(this->width(),rhs.width()); bit++) {
+	if (this->bitIs1(bit) && rhs.bitIs0(bit)) { return 1; }
+	if (rhs.bitIs1(bit) && this->bitIs0(bit)) { return 0; }
+	if (this->bitIsXZ(bit)) { return 1; }
 	if (rhs.bitIsXZ(bit)) { return 0; }
     }
     return 0;

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -183,7 +183,8 @@ private:
 		}
 	    }
 	}
-	if (!nodep->sensp()->castNodeVarRef()) {
+	if (!nodep->sensp()->castNodeVarRef()
+	    && !nodep->sensp()->castEnumItemRef()) {  // V3Const will cleanup
 	    if (debug()) nodep->dumpTree(cout,"-tree: ");
 	    nodep->v3error("Unsupported: Complex statement in sensitivity list");
 	}
@@ -203,7 +204,7 @@ private:
 	    if (AstNodeVarRef* varrefp = basefromp->castNodeVarRef()) {  // Maybe varxref - so need to clone
 		nodep->attrp(new AstAttrOf(nodep->fileline(), AstAttrType::VAR_BASE,
 					   varrefp->cloneTree(false)));
-	    } else if (AstMemberSel* fromp = nodep->fromp()->castMemberSel()) {
+	    } else if (AstMemberSel* fromp = basefromp->castMemberSel()) {
 		nodep->attrp(new AstAttrOf(nodep->fileline(), AstAttrType::MEMBER_BASE,
 					   fromp->cloneTree(false)));
 	    } else {

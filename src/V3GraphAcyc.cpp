@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -461,7 +461,7 @@ void GraphAcyc::place() {
     }
 
     // Sort by weight, then by vertex (so that we completely process one vertex, when possible)
-    sort(edges.begin(), edges.end(), GraphAcycEdgeCmp());
+    stable_sort(edges.begin(), edges.end(), GraphAcycEdgeCmp());
 
     // Process each edge in weighted order
     m_placeStep = 10;

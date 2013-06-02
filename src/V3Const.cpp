@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -370,37 +370,40 @@ private:
 
     // Extraction checks
     bool warnSelect(AstSel* nodep) {
-	AstNode* basefromp = AstArraySel::baseFromp(nodep);
 	if (m_doGenerate) {
 	    // Never checked yet
 	    V3Width::widthParamsEdit(nodep);
 	    nodep->iterateChildren(*this);	// May need "constifying"
 	}
-	if (AstNodeVarRef* varrefp = basefromp->castNodeVarRef()) {
-	    AstVar* varp = varrefp->varp();
-	    if (!varp->dtypep()) varp->v3fatalSrc("Data type lost");
-	    AstBasicDType* bdtypep = varp->basicp();  if (!bdtypep) varp->v3fatalSrc("Select of non-selectable type");
-	    if (m_warn
-		&& nodep->lsbp()->castConst()
-		&& nodep->widthp()->castConst()
-		&& (!bdtypep->isRanged() || bdtypep->msb())) {  // else it's non-resolvable parameterized
-		if (nodep->lsbp()->castConst()->num().isFourState()
-		    || nodep->widthp()->castConst()->num().isFourState()) {
-		    nodep->v3error("Selection index is constantly unknown or tristated: "
-				   "lsb="<<nodep->lsbp()->name()<<" width="<<nodep->widthp()->name());
-		    // Replacing nodep will make a mess above, so we replace the offender
-		    replaceZero(nodep->lsbp());
-		}
-		else if ((nodep->msbConst() > bdtypep->msbMaxSelect())
-			 || (nodep->lsbConst() > bdtypep->msbMaxSelect())) {
-		    // See also warning in V3Width
-		    nodep->v3warn(SELRANGE, "Selection index out of range: "
-				   <<nodep->msbConst()<<":"<<nodep->lsbConst()
-				   <<" outside "<<bdtypep->msbMaxSelect()<<":0"
-				   <<(bdtypep->lsb()>=0 ? ""
-				      :" (adjusted +"+cvtToStr(-bdtypep->lsb())+" to account for negative lsb)"));
-		    // Don't replace with zero, we'll do it later
-		}
+	// Find range of dtype we are selecting from
+	// Similar code in V3Unknown::AstSel
+	bool doit = true;
+	if (m_warn
+	    && nodep->lsbp()->castConst()
+	    && nodep->widthp()->castConst()
+	    && doit) {
+	    int maxDeclBit = nodep->declRange().hiMaxSelect()*nodep->declElWidth() + (nodep->declElWidth()-1);
+	    if (nodep->lsbp()->castConst()->num().isFourState()
+		|| nodep->widthp()->castConst()->num().isFourState()) {
+		nodep->v3error("Selection index is constantly unknown or tristated: "
+			       "lsb="<<nodep->lsbp()->name()<<" width="<<nodep->widthp()->name());
+		// Replacing nodep will make a mess above, so we replace the offender
+		replaceZero(nodep->lsbp());
+	    }
+	    else if (nodep->declRange().ranged()
+		     && (nodep->msbConst() > maxDeclBit
+			 || nodep->lsbConst() > maxDeclBit)) {
+		// See also warning in V3Width
+		// Must adjust by element width as declRange() is in number of elements
+		nodep->v3warn(SELRANGE, "Selection index out of range: "
+			      <<(nodep->msbConst()/nodep->declElWidth())
+			      <<":"<<(nodep->lsbConst()/nodep->declElWidth())
+			      <<" outside "<<nodep->declRange().hiMaxSelect()<<":0"
+			      <<(nodep->declRange().lo()>=0 ? ""
+				 :(" (adjusted +"+cvtToStr(-nodep->declRange().lo())
+				   +" to account for negative lsb)")));
+		UINFO(1,"    Related Raw index is "<<nodep->msbConst()<<":"<<nodep->lsbConst()<<endl);
+		// Don't replace with zero, we'll do it later
 	    }
 	}
 	return false;  // Not a transform, so NOP
@@ -1270,6 +1273,7 @@ private:
 	nodep->iterateChildren(*this);
 	if (m_doNConst
 	    && (nodep->sensp()->castConst()
+		|| nodep->sensp()->castEnumItemRef()
 		|| (nodep->varrefp() && nodep->varrefp()->varp()->isParam()))) {
 	    // Constants in sensitivity lists may be removed (we'll simplify later)
 	    if (nodep->isClocked()) {  // A constant can never get a pos/negexge
@@ -1298,6 +1302,9 @@ private:
 	    if (!senvarp) sensp->v3fatalSrc("Non-varref sensitivity variable");
 	    sensp->replaceWith(senvarp);
 	    sensp->deleteTree(); sensp=NULL;
+	} else if (!m_doNConst  // Deal with later when doNConst missing
+		   && (nodep->sensp()->castEnumItemRef()
+		       || nodep->sensp()->castConst())) {
 	} else {
 	    if (nodep->hasVar() && !nodep->varrefp()) nodep->v3fatalSrc("Null sensitivity variable");
 	}
@@ -1397,6 +1404,7 @@ private:
 	    for (AstNodeSenItem* nextp, * senp = nodep->sensesp()->castNodeSenItem();
 		 senp; senp=nextp) {
 		nextp=senp->nextp()->castNodeSenItem();
+		// cppcheck-suppress unassignedVariable  // cppcheck bug
 		SenItemCmp cmp;
 		if (nextp && !cmp(senp, nextp)) {
 		    // Something's out of order, sort it
@@ -1405,7 +1413,7 @@ private:
 		    for (AstNodeSenItem* senp = nodep->sensesp()->castNodeSenItem(); senp; senp=senp->nextp()->castNodeSenItem()) {
 			vec.push_back(senp);
 		    }
-		    sort(vec.begin(), vec.end(), SenItemCmp());
+		    stable_sort(vec.begin(), vec.end(), SenItemCmp());
 		    for (vector<AstNodeSenItem*>::iterator it=vec.begin(); it!=vec.end(); ++it) {
 			(*it)->unlinkFrBack();
 		    }
@@ -1457,6 +1465,9 @@ private:
     }
     virtual void visit(AstAssignAlias* nodep, AstNUser*) {
 	// Don't perform any optimizations, keep the alias around
+    }
+    virtual void visit(AstAssignVarScope* nodep, AstNUser*) {
+	// Don't perform any optimizations, the node won't be linked yet
     }
     virtual void visit(AstAssignW* nodep, AstNUser*) {
 	nodep->iterateChildren(*this);

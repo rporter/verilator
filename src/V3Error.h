@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -57,6 +57,7 @@ public:
 	// Warning codes:
 	EC_FIRST_WARN,	// Just a code so the program knows where to start warnings
 	//
+	ALWCOMBORDER,	// Always_comb with unordered statements
 	ASSIGNDLY,	// Assignment delays
 	ASSIGNIN,	// Assigning to input
 	BLKANDNBLK,	// Blocked and non-blocking assignments to same variable
@@ -116,7 +117,7 @@ public:
 	    "BLKLOOPINIT", "DETECTARRAY", "MULTITOP", "TASKNSVAR",
 	    // Warnings
 	    " EC_FIRST_WARN",
-	    "ASSIGNDLY", "ASSIGNIN",
+	    "ALWCOMBORDER", "ASSIGNDLY", "ASSIGNIN",
 	    "BLKANDNBLK", "BLKSEQ",
 	    "CASEINCOMPLETE", "CASEOVERLAP", "CASEWITHX", "CASEX", "CDCRSTLOGIC", "CMPCONST",
 	    "COMBDLY", "DEFPARAM", "DECLFILENAME",
@@ -146,7 +147,8 @@ public:
     bool mentionManual() const { return ( m_e==EC_FATALSRC || pretendError() ); }
 
     // Warnings that are lint only
-    bool lintError() const { return ( m_e==CASEINCOMPLETE || m_e==CASEOVERLAP
+    bool lintError() const { return ( m_e==ALWCOMBORDER
+				      || m_e==CASEINCOMPLETE || m_e==CASEOVERLAP
 				      || m_e==CASEWITHX || m_e==CASEX
 				      || m_e==CMPCONST
 				      || m_e==ENDLABEL
@@ -179,6 +181,7 @@ class V3Error {
     // Base class for any object that wants debugging and error reporting
 
     typedef set<string> MessagesSet;
+    typedef void (*ErrorExitCb)(void);
 
   private:
     static bool 	s_describedWarnings;	// Told user how to disable warns
@@ -192,6 +195,8 @@ class V3Error {
     static V3ErrorCode	s_errorCode;		// Error string being formed will abort
     static bool		s_errorSuppressed;	// Error being formed should be suppressed
     static MessagesSet	s_messages;		// What errors we've outputted
+    static ErrorExitCb	s_errorExitCb;		// Callback when error occurs for dumping
+
     enum MaxErrors { 	MAX_ERRORS = 50 };	// Fatal after this may errors
 
     V3Error() { cerr<<("Static class"); abort(); }
@@ -216,6 +221,7 @@ class V3Error {
     static bool		isError(V3ErrorCode code, bool supp);
     static string	lineStr (const char* filename, int lineno);
     static V3ErrorCode	errorCode() { return s_errorCode; }
+    static void		errorExitCb(ErrorExitCb cb) { s_errorExitCb = cb; }
 
     // When printing an error/warning, print prefix for multiline message
     static string warnMore();
@@ -294,7 +300,7 @@ protected:
     int nameToNumber(const string& filename);
     const string numberToName(int filenameno) const { return m_names[filenameno]; }
     const V3LangCode numberToLang(int filenameno) const { return m_languages[filenameno]; }
-    void numberToLang(int filenameno, const V3LangCode l) { m_languages[filenameno] = l; }
+    void numberToLang(int filenameno, const V3LangCode& l) { m_languages[filenameno] = l; }
     void clear() { m_namemap.clear(); m_names.clear(); m_languages.clear(); }
     void fileNameNumMapDumpXml(ostream& os);
     static const string filenameLetters(int fileno);

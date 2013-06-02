@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -228,8 +228,7 @@ void process () {
     if (!v3Global.opt.xmlOnly()) {
 	// Add top level wrapper with instance pointing to old top
 	// Move packages to under new top
-	// Must do this after we know the width of any parameters
-	// We also do it after coverage/assertion insertion so we don't 'cover' the top level.
+	// Must do this after we know parameters and dtypes (as don't clone dtype decls)
 	V3LinkLevel::wrapTop(v3Global.rootp());
     }
 
@@ -314,6 +313,11 @@ void process () {
 	v3Global.checkTree();
 	V3Global::dumpGlobalTree("const.tree");
 
+	// Convert case statements to if() blocks.  Must be after V3Unknown
+	// Must be before V3Task so don't need to deal with task in case value compares
+	V3Case::caseAll(v3Global.rootp());
+	V3Global::dumpGlobalTree("case.tree");
+
 	// Inline all tasks
 	V3Task::taskAll(v3Global.rootp());
 	V3Global::dumpGlobalTree("task.tree");
@@ -330,10 +334,6 @@ void process () {
 	// Expand slices of arrays
 	V3Slice::sliceAll(v3Global.rootp());
 	V3Global::dumpGlobalTree("slices.tree");
-
-	// Convert case statements to if() blocks.  Must be after V3Unknown
-	V3Case::caseAll(v3Global.rootp());
-	V3Global::dumpGlobalTree("case.tree");
 
 	// Push constants across variables and remove redundant assignments
 	V3Const::constifyAll(v3Global.rootp());
@@ -676,7 +676,7 @@ int main(int argc, char** argv, char** env) {
     }
 
     // Final steps
-    V3Global::dumpGlobalTree("final.tree",99);
+    V3Global::dumpGlobalTree("final.tree",990);
     V3Error::abortIfWarnings();
 
     if (!v3Global.opt.lintOnly() && !v3Global.opt.cdc()

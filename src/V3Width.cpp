@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -95,7 +95,9 @@ public:
     WidthVP(int width, int widthMin, Stage stage)
 	: m_width(width), m_widthMin(widthMin), m_dtypep(NULL), m_stage(stage) {}
     WidthVP(AstNodeDType* dtypep, Stage stage)
-	: m_width(0), m_widthMin(0), m_dtypep(dtypep), m_stage(stage) {}
+	: m_width(dtypep->width()), m_widthMin(dtypep->widthMin()), m_dtypep(dtypep), m_stage(stage) {}
+    WidthVP(AstNodeDType* dtypep, int width, int widthMin, Stage stage)
+	: m_width(width), m_widthMin(widthMin), m_dtypep(dtypep), m_stage(stage) {}
     int width() const { return m_width; }
     int widthMin() const { return m_widthMin?m_widthMin:m_width; }
     AstNodeDType* dtypep() const { return m_dtypep; }
@@ -115,12 +117,11 @@ private:
     // STATE
     bool	m_paramsOnly;	// Computing parameter value; limit operation
     AstRange*	m_cellRangep;	// Range for arrayed instantiations, NULL for normal instantiations
-    AstNodeCase* m_casep;	// Current case statement CaseItem is under
     AstFunc*	m_funcp;	// Current function
     AstInitial*	m_initialp;	// Current initial block
     AstAttrOf*	m_attrp;	// Current attribute
-    AstNodeDType* m_assDTypep;	// Assign LHS data type for assignment pattern
     bool	m_doGenerate;	// Do errors later inside generate statement
+    int		m_dtTables;	// Number of created data type tables
 
     // CLASSES
 #define ANYSIZE 0
@@ -359,10 +360,25 @@ private:
 	}
     }
     virtual void visit(AstRange* nodep, AstNUser* vup) {
-	// If there's an edit, then processes the edit'ee (can't just rely on iterateChildren because sometimes we for(...) here ourself
 	// Real: Not allowed
 	// Signed: unsigned output, input either
-	AstNode* selp = V3Width::widthSelNoIterEdit(nodep); if (selp!=nodep) { nodep=NULL; selp->iterate(*this,vup); return; }
+	// Convert all range values to constants
+	UINFO(6,"RANGE "<<nodep<<endl);
+	V3Const::constifyParamsEdit(nodep->msbp()); // May relink pointed to node
+	V3Const::constifyParamsEdit(nodep->lsbp()); // May relink pointed to node
+	checkConstantOrReplace(nodep->msbp(), "MSB of bit range isn't a constant");
+	checkConstantOrReplace(nodep->lsbp(), "LSB of bit range isn't a constant");
+	int msb = nodep->msbConst();
+	int lsb = nodep->lsbConst();
+	if (msb<lsb) {
+	    // Little endian bits are legal, just remember to swap
+	    // Warning is in V3Width to avoid false warnings when in "off" generate if's
+	    nodep->littleEndian(!nodep->littleEndian());
+	    // Internally we'll always have msb() be the greater number
+	    // We only need to correct when doing [] AstSel extraction,
+	    // and when tracing the vector.
+	    nodep->msbp()->swapWith(nodep->lsbp());
+	}
 	if (vup->c()->prelim()) {
 	    nodep->msbp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,BOTH).p());
 	    nodep->lsbp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,BOTH).p());
@@ -371,7 +387,7 @@ private:
 	    int width = nodep->elementsConst();
 	    if (width > (1<<28)) nodep->v3error("Width of bit range is huge; vector of over 1billion bits: 0x"<<hex<<width);
 	    // Note width() not set on range; use elementsConst()
-	    if (nodep->littleEndian()) {
+	    if (nodep->littleEndian() && !nodep->backp()->castUnpackArrayDType()) {
 		nodep->v3warn(LITENDIAN,"Little bit endian vector: MSB < LSB of bit range: "<<nodep->lsbConst()<<":"<<nodep->msbConst());
 	    }
 	}
@@ -395,7 +411,7 @@ private:
 		nodep->dtypeSetLogicBool(); return;
 	    }
 	    int width = nodep->widthConst();
-	    nodep->dtypeSetLogicSized(width,width,AstNumeric::UNSIGNED);
+	    if (!nodep->dtypep()) nodep->v3fatalSrc("dtype wasn't set") // by V3WidthSel
 	    if (nodep->lsbp()->castConst()
 		&& nodep->msbConst() < nodep->lsbConst()) {
 		nodep->v3error("Unsupported: MSB < LSB of bit extract: "
@@ -415,31 +431,29 @@ private:
 	    }
 	    // Check bit indexes.
 	    // What is the MSB?  We want the true MSB, not one starting at 0,
-	    // because a 4 bit index is required to look at a one-bit variable[15:15]
+	    // because a 4 bit index is required to look at a one-bit variable[15:15] and 5 bits for [15:-2]
 	    int frommsb = nodep->fromp()->width() - 1;
 	    int fromlsb = 0;
-	    AstNodeVarRef* varrp = nodep->fromp()->castNodeVarRef();
-	    if (varrp
-		&& varrp->varp()->basicp()
-		&& varrp->varp()->basicp()->isRanged()) {	// Selecting a bit from a multibit register
-		frommsb = varrp->varp()->basicp()->msbMaxSelect();  // Corrected for negative lsb
-		fromlsb = varrp->varp()->basicp()->lsb();
+	    int elw = nodep->declElWidth();  // Must adjust to tell user bit ranges
+	    if (nodep->declRange().ranged()) {
+		frommsb = nodep->declRange().hiMaxSelect()*elw + (elw-1);  // Corrected for negative lsb
+		fromlsb = nodep->declRange().lo()*elw;
+	    } else {
+		//nodep->v3fatalSrc("Should have been declRanged in V3WidthSel");
 	    }
 	    int selwidth = V3Number::log2b(frommsb+1-1)+1;	// Width to address a bit
 	    nodep->fromp()->iterateAndNext(*this,WidthVP(selwidth,selwidth,FINAL).p());
 	    nodep->lsbp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,FINAL).p());
 	    if (widthBad(nodep->lsbp(),selwidth,selwidth)
 		&& nodep->lsbp()->width()!=32) {
-		nodep->v3warn(WIDTH,"Bit extraction of var["<<frommsb<<":"<<fromlsb<<"] requires "
-			      <<selwidth<<" bit index, not "
-			      <<nodep->lsbp()->width()
-			      <<(nodep->lsbp()->width()!=nodep->lsbp()->widthMin()
-				 ?" or "+cvtToStr(nodep->lsbp()->widthMin()):"")
-			      <<" bits.");
 		if (!nodep->fileline()->warnIsOff(V3ErrorCode::WIDTH)) {
+		    nodep->v3warn(WIDTH,"Bit extraction of var["<<(frommsb/elw)<<":"<<(fromlsb/elw)<<"] requires "
+				  <<(selwidth/elw)<<" bit index, not "
+				  <<(nodep->lsbp()->width()/elw)
+				  <<(nodep->lsbp()->width()!=nodep->lsbp()->widthMin()
+				     ?" or "+cvtToStr(nodep->lsbp()->widthMin()/elw):"")
+				  <<" bits.");
 		    UINFO(1,"    Related node: "<<nodep<<endl);
-		    if (varrp) UINFO(1,"    Related var: "<<varrp->varp()<<endl);
-		    if (varrp) UINFO(1,"    Related dtype: "<<varrp->varp()->dtypep()<<endl);
 		}
 	    }
 	    if (nodep->lsbp()->castConst() && nodep->msbConst() > frommsb) {
@@ -458,8 +472,6 @@ private:
 				   <<nodep->msbConst()<<":"<<nodep->lsbConst()
 				   <<" outside "<<frommsb<<":"<<fromlsb);
 		    UINFO(1,"    Related node: "<<nodep<<endl);
-		    if (varrp) UINFO(1,"    Related var: "<<varrp->varp()<<endl);
-		    if (varrp) UINFO(1,"    Related dtype: "<<varrp->varp()->dtypep()<<endl);
 		}
 	    }
 	    // iterate FINAL is two blocks above
@@ -482,15 +494,11 @@ private:
 	    checkCvtUS(nodep->bitp());
 	    //
 	    nodep->fromp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,PRELIM).p());
-	    AstNode* basefromp = AstArraySel::baseFromp(nodep->fromp());
-	    int dimension      = AstArraySel::dimension(nodep->fromp());
-	    AstNodeVarRef* varrp = basefromp->castNodeVarRef();
-	    if (!varrp) nodep->v3fatalSrc("No VarRef found under ArraySel(s)");
 	    //
 	    int frommsb;
 	    int fromlsb;
-	    AstNodeDType* ddtypep = varrp->varp()->dtypep()->dtypeDimensionp(dimension);
-	    if (AstArrayDType* adtypep = ddtypep->castArrayDType()) {
+	    AstNodeDType* fromDtp = nodep->fromp()->dtypep()->skipRefp();
+	    if (AstUnpackArrayDType* adtypep = fromDtp->castUnpackArrayDType()) {
 		frommsb = adtypep->msb();
 		fromlsb = adtypep->lsb();
 		if (fromlsb>frommsb) {int t=frommsb; frommsb=fromlsb; fromlsb=t; }
@@ -499,6 +507,8 @@ private:
 		nodep->dtypeFrom(adtypep->subDTypep());  // Need to strip off array reference
 	    }
 	    else {
+		// Note PackArrayDType doesn't use an ArraySel but a normal Sel.
+		UINFO(1,"    Related dtype: "<<fromDtp<<endl);
 		nodep->v3fatalSrc("Array reference exceeds dimension of array");
 		frommsb = fromlsb = 0;
 	    }
@@ -514,8 +524,7 @@ private:
 			      <<" bits.");
 		if (!nodep->fileline()->warnIsOff(V3ErrorCode::WIDTH)) {
 		    UINFO(1,"    Related node: "<<nodep<<endl);
-		    if (varrp) UINFO(1,"    Related var: "<<varrp->varp()<<endl);
-		    if (varrp) UINFO(1,"    Related depth: "<<dimension<<" dtype: "<<ddtypep<<endl);
+		    UINFO(1,"    Related dtype: "<<nodep->dtypep()<<endl);
 		}
 	    }
 	    widthCheck(nodep,"Extract Range",nodep->bitp(),selwidth,selwidth,true);
@@ -524,22 +533,34 @@ private:
 
     virtual void visit(AstSelBit* nodep, AstNUser* vup) {
 	// Just a quick check as after V3Param these nodes instead are AstSel's
+	nodep->fromp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
+	nodep->rhsp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
+	nodep->thsp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
 	nodep->attrp()->iterateAndNext(*this,WidthVP(0,0,FINAL).p());
 	AstNode* selp = V3Width::widthSelNoIterEdit(nodep); if (selp!=nodep) { nodep=NULL; selp->iterate(*this,vup); return; }
 	nodep->v3fatalSrc("AstSelBit should disappear after widthSel");
     }
     virtual void visit(AstSelExtract* nodep, AstNUser* vup) {
 	// Just a quick check as after V3Param these nodes instead are AstSel's
+	nodep->fromp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
+	nodep->rhsp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
+	nodep->thsp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
 	nodep->attrp()->iterateAndNext(*this,WidthVP(0,0,FINAL).p());
 	AstNode* selp = V3Width::widthSelNoIterEdit(nodep); if (selp!=nodep) { nodep=NULL; selp->iterate(*this,vup); return; }
 	nodep->v3fatalSrc("AstSelExtract should disappear after widthSel");
     }
     virtual void visit(AstSelPlus* nodep, AstNUser* vup) {
+	nodep->fromp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
+	nodep->rhsp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
+	nodep->thsp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
 	nodep->attrp()->iterateAndNext(*this,WidthVP(0,0,FINAL).p());
 	AstNode* selp = V3Width::widthSelNoIterEdit(nodep); if (selp!=nodep) { nodep=NULL; selp->iterate(*this,vup); return; }
 	nodep->v3fatalSrc("AstSelPlus should disappear after widthSel");
     }
     virtual void visit(AstSelMinus* nodep, AstNUser* vup) {
+	nodep->fromp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
+	nodep->rhsp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
+	nodep->thsp()->iterateAndNext(*this,WidthVP(0,0,PRELIM).p()); //FINAL in AstSel
 	nodep->attrp()->iterateAndNext(*this,WidthVP(0,0,FINAL).p());
 	AstNode* selp = V3Width::widthSelNoIterEdit(nodep); if (selp!=nodep) { nodep=NULL; selp->iterate(*this,vup); return; }
 	nodep->v3fatalSrc("AstSelMinus should disappear after widthSel");
@@ -635,14 +656,41 @@ private:
 	m_attrp = nodep;
 	nodep->fromp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,BOTH).p());
 	// Don't iterate children, don't want to lose VarRef.
-	if (nodep->attrType()==AstAttrType::EXPR_BITS) {
-	    if (!nodep->fromp() || !nodep->fromp()->widthMin()) nodep->v3fatalSrc("Unsized expression");
-	    V3Number num (nodep->fileline(), 32, nodep->fromp()->width());
-	    nodep->replaceWith(new AstConst(nodep->fileline(), num)); nodep->deleteTree(); nodep=NULL;
-	} else if (nodep->attrType()==AstAttrType::VAR_BASE) {
+	if (nodep->attrType()==AstAttrType::VAR_BASE) {
 	    // Soon to be handled in V3LinkWidth SEL generation, under attrp() and newSubLsbOf
 	} else if (nodep->attrType()==AstAttrType::MEMBER_BASE) {
 	    // Soon to be handled in V3LinkWidth SEL generation, under attrp() and newSubLsbOf
+	} else if (nodep->attrType()==AstAttrType::DIM_DIMENSIONS
+		   || nodep->attrType()==AstAttrType::DIM_UNPK_DIMENSIONS) {
+	    if (!nodep->fromp() || !nodep->fromp()->dtypep()) nodep->v3fatalSrc("Unsized expression");
+	    pair<uint32_t,uint32_t> dim = nodep->fromp()->dtypep()->dimensions(true);
+	    int val = (nodep->attrType()==AstAttrType::DIM_UNPK_DIMENSIONS
+		       ? dim.second : (dim.first+dim.second));
+	    nodep->replaceWith(new AstConst(nodep->fileline(), AstConst::Signed32(), val)); nodep->deleteTree(); nodep=NULL;
+	} else if (nodep->attrType()==AstAttrType::DIM_BITS
+		   || nodep->attrType()==AstAttrType::DIM_HIGH
+		   || nodep->attrType()==AstAttrType::DIM_INCREMENT
+		   || nodep->attrType()==AstAttrType::DIM_LEFT
+		   || nodep->attrType()==AstAttrType::DIM_LOW
+		   || nodep->attrType()==AstAttrType::DIM_RIGHT
+		   || nodep->attrType()==AstAttrType::DIM_SIZE) {
+	    if (!nodep->fromp() || !nodep->fromp()->dtypep()) nodep->v3fatalSrc("Unsized expression");
+	    pair<uint32_t,uint32_t> dim = nodep->fromp()->dtypep()->skipRefp()->dimensions(true);
+	    uint32_t maxdim = dim.first+dim.second;
+	    if (!nodep->dimp() || nodep->dimp()->castConst() || maxdim<1) {
+		int dim = !nodep->dimp() ? 1 : nodep->dimp()->castConst()->toSInt();
+		int val = dimensionValue(nodep->fromp()->dtypep(), nodep->attrType(), dim);
+		nodep->replaceWith(new AstConst(nodep->fileline(), AstConst::Signed32(), val)); nodep->deleteTree(); nodep=NULL;
+	    }
+	    else {  // Need a runtime lookup table.  Yuk.
+		if (!nodep->fromp() || !nodep->fromp()->dtypep()) nodep->v3fatalSrc("Unsized expression");
+		AstVar* varp = dimensionVarp(nodep->fromp()->dtypep(), nodep->attrType());
+		AstNode* dimp = nodep->dimp()->unlinkFrBack();
+		AstVarRef* varrefp = new AstVarRef(nodep->fileline(), varp, false);
+		varrefp->packagep(v3Global.rootp()->dollarUnitPkgAddp());
+		AstNode* newp = new AstArraySel(nodep->fileline(), varrefp, dimp);
+		nodep->replaceWith(newp); nodep->deleteTree(); nodep=NULL;
+	    }
 	} else {  // Everything else resolved earlier
 	    nodep->dtypeSetLogicSized(32,1,AstNumeric::UNSIGNED);	// Approximation, unsized 32
 	    UINFO(1,"Missing ATTR type case node: "<<nodep<<endl);
@@ -655,7 +703,7 @@ private:
     }
 
     // DTYPES
-    virtual void visit(AstArrayDType* nodep, AstNUser*) {
+    virtual void visit(AstNodeArrayDType* nodep, AstNUser*) {
 	if (nodep->didWidthAndSet()) return;  // This node is a dtype & not both PRELIMed+FINALed
 	if (nodep->childDTypep()) nodep->refDTypep(moveChildDTypeEdit(nodep));
 	// Iterate into subDTypep() to resolve that type and update pointer.
@@ -663,7 +711,13 @@ private:
 	// Cleanup array size
 	nodep->rangep()->iterateAndNext(*this,WidthVP(ANYSIZE,0,BOTH).p());
 	nodep->dtypep(nodep);  // The array itself, not subDtype
-	nodep->widthFromSub(nodep->subDTypep());
+	if (nodep->castUnpackArrayDType()) {
+	    // Historically array elements have width of the ref type not the full array
+	    nodep->widthFromSub(nodep->subDTypep());
+	} else {
+	    int width = nodep->subDTypep()->width() * nodep->rangep()->elementsConst();
+	    nodep->widthForce(width,width);
+	}
 	UINFO(4,"dtWidthed "<<nodep<<endl);
     }
     virtual void visit(AstBasicDType* nodep, AstNUser*) {
@@ -675,6 +729,10 @@ private:
 	    // other nodes unless they are referencing this type.  Furthermore the width()
 	    // calculation would return identical values.  Therefore we can directly replace the width
 	    nodep->widthForce(nodep->rangep()->elementsConst(), nodep->rangep()->elementsConst());
+	}
+	else if (nodep->implicit()) {
+	    // Parameters may notice implicitness and change to different dtype
+	    nodep->widthForce(1,1);
 	}
 	// else width in node is correct; it was set based on keyword().width()
 	// at construction time.  Ditto signed, so "unsigned byte" etc works right.
@@ -747,6 +805,28 @@ private:
 	pushDeletep(nodep); nodep=NULL;
 	//if (debug()) newp->dumpTree(cout,"  CastOut: ");
     }
+    virtual void visit(AstCastSize* nodep, AstNUser* vup) {
+	if (!nodep->rhsp()->castConst()) nodep->v3fatalSrc("Unsupported: Non-const cast of size");
+	//if (debug()) nodep->dumpTree(cout,"  CastPre: ");
+	int width = nodep->rhsp()->castConst()->toSInt();
+	if (width < 1) { nodep->v3error("Size-changing cast to zero or negative size"); width=1; }
+	nodep->lhsp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,BOTH).p());
+	AstBasicDType* underDtp = nodep->lhsp()->dtypep()->castBasicDType();
+	if (!underDtp) {
+	    nodep->v3error("Unsupported: Size-changing cast on non-basic data type");
+	    underDtp = nodep->findLogicBoolDType()->castBasicDType();
+	}
+	AstNodeDType* newDtp = (underDtp->keyword().isFourstate()
+				? nodep->findLogicDType(width, width, underDtp->numeric())
+				: nodep->findBitDType(width, width, underDtp->numeric()));
+	nodep->dtypep(newDtp);
+	AstNode* underp = nodep->lhsp()->unlinkFrBack();
+	nodep->replaceWith(underp);
+	if (underp->width()!=width) {
+	    fixWidthExtend(underp, newDtp);
+	}
+	pushDeletep(nodep); nodep=NULL;
+    }
     virtual void visit(AstVar* nodep, AstNUser* vup) {
 	//if (debug()) nodep->dumpTree(cout,"  InitPre: ");
 	// Must have deterministic constant width
@@ -768,7 +848,7 @@ private:
 	nodep->dtypep(iterateEditDTypep(nodep, nodep->dtypep()));
 	if (!nodep->dtypep()) nodep->v3fatalSrc("No dtype determined for var");
 	if (nodep->isIO() && !(nodep->dtypeSkipRefp()->castBasicDType()
-			       || nodep->dtypeSkipRefp()->castArrayDType()
+			       || nodep->dtypeSkipRefp()->castNodeArrayDType()
 			       || nodep->dtypeSkipRefp()->castNodeClassDType())) {
 	    nodep->v3error("Unsupported: Inputs and outputs must be simple data types");
 	}
@@ -780,8 +860,8 @@ private:
 	bool didchk = false;
 	bool implicitParam = nodep->isParam() && bdtypep && bdtypep->implicit();
 	if (implicitParam) {
-	    int width=0;
 	    if (nodep->valuep()) {
+		int width=0;
 		nodep->valuep()->iterateAndNext(*this,WidthVP(width,0,PRELIM).p());
 		UINFO(9,"implicitParamPRELIMIV "<<nodep->valuep()<<endl);
 		// Although nodep will get a different width for parameters just below,
@@ -803,7 +883,19 @@ private:
 			width = 32;
 		    }
 		    // Can't just inherit valuep()->dtypep() as mwidth might not equal width
-		    nodep->dtypeChgWidthSigned(width, nodep->valuep()->widthMin(),issigned);
+		    if (width==1) {
+			// one bit parameter is same as "parameter [0] foo", not "parameter logic foo"
+			// as you can extract "foo[0]" from a parameter but not a wire
+			nodep->dtypeChgWidthSigned(width, nodep->valuep()->widthMin(),
+						   issigned?AstNumeric::SIGNED : AstNumeric::UNSIGNED);
+			nodep->dtypep(nodep->findLogicRangeDType
+				      (VNumRange(0,0,false),
+				       nodep->valuep()->widthMin(),
+				       issigned?AstNumeric::SIGNED : AstNumeric::UNSIGNED));
+		    } else {
+			nodep->dtypeChgWidthSigned(width, nodep->valuep()->widthMin(),
+						   issigned?AstNumeric::SIGNED : AstNumeric::UNSIGNED);
+		    }
 		    didchk = true;
 		    nodep->valuep()->iterateAndNext(*this,WidthVP(width,nodep->widthMin(),FINAL).p());
 		}
@@ -820,7 +912,9 @@ private:
 	if (nodep->valuep()) {
 	    //if (debug()) nodep->dumpTree(cout,"  final: ");
 	    if (!didchk) nodep->valuep()->iterateAndNext(*this,WidthVP(nodep->dtypep()->width(),0,BOTH).p());
-	    widthCheck(nodep,"Initial value",nodep->valuep(),nodep->width(),nodep->widthMin());
+	    if (!nodep->valuep()->castInitArray()) { // No dtype at present, perhaps TODO
+		widthCheck(nodep,"Initial value",nodep->valuep(),nodep->width(),nodep->widthMin());
+	    }
 	}
 	UINFO(4,"varWidthed "<<nodep<<endl);
 	//if (debug()) nodep->dumpTree(cout,"  InitOut: ");
@@ -899,6 +993,7 @@ private:
     virtual void visit(AstEnumItem* nodep, AstNUser* vup) {
 	UINFO(5,"   ENUMITEM "<<nodep<<endl);
 	AstNodeDType* vdtypep = vup->c()->dtypep();
+	if (!vdtypep) nodep->v3fatalSrc("ENUMITEM not under ENUM");
 	nodep->dtypep(vdtypep);
 	if (nodep->valuep()) {  // else the value will be assigned sequentially
 	    int width = vdtypep->width();  // Always from parent type
@@ -920,6 +1015,71 @@ private:
 	    enump->iterate(*this,vup);
 	}
 	nodep->dtypeFrom(nodep->itemp());
+    }
+    virtual void visit(AstInitArray* nodep, AstNUser* vup) {
+	// Should be correct by construction, so we'll just loop through all types
+	nodep->iterateChildren(*this, vup);
+    }
+    virtual void visit(AstInside* nodep, AstNUser* vup) {
+	nodep->exprp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,PRELIM).p());
+	for (AstNode* nextip, *itemp = nodep->itemsp(); itemp; itemp=nextip) {
+	    nextip = itemp->nextp(); // Prelim may cause the node to get replaced
+	    itemp->iterate(*this,WidthVP(ANYSIZE,0,PRELIM).p()); itemp=NULL;
+	}
+	// Take width as maximum across all items
+	int width = nodep->exprp()->width();
+	int mwidth = nodep->exprp()->widthMin();
+	for (AstNode* itemp = nodep->itemsp(); itemp; itemp=itemp->nextp()) {
+	    width = max(width,itemp->width());
+	    mwidth = max(mwidth,itemp->widthMin());
+	}
+	// Apply width
+	nodep->exprp()->iterateAndNext(*this,WidthVP(width,mwidth,FINAL).p());
+	for (AstNode* itemp = nodep->itemsp(); itemp; itemp=itemp->nextp()) {
+	    widthCheck(nodep,"Inside Item",itemp,width,mwidth);
+	}
+        widthCheck(nodep,"Inside expression",nodep->exprp(),width,mwidth);
+	nodep->dtypeSetLogicBool();
+	if (debug()>=9) nodep->dumpTree(cout,"-inside-in: ");
+	// Now rip out the inside and replace with simple math
+	AstNode* newp = NULL;
+	for (AstNode* nextip, *itemp = nodep->itemsp(); itemp; itemp=nextip) {
+	    nextip = itemp->nextp(); // Will be unlinking
+	    AstNode* inewp;
+	    if (AstInsideRange* irangep = itemp->castInsideRange()) {
+		inewp = new AstAnd(itemp->fileline(),
+				   new AstGte(itemp->fileline(),
+					      nodep->exprp()->cloneTree(true),
+					      irangep->lhsp()->unlinkFrBack()),
+				   new AstLte(itemp->fileline(),
+					      nodep->exprp()->cloneTree(true),
+					      irangep->rhsp()->unlinkFrBack()));
+	    } else {
+		inewp = new AstEqWild(itemp->fileline(),
+				      nodep->exprp()->cloneTree(true),
+				      itemp->unlinkFrBack());
+	    }
+	    if (newp) newp = new AstOr(nodep->fileline(), newp, inewp);
+	    else newp = inewp;
+	}
+	if (!newp) newp = new AstConst(nodep->fileline(), AstConst::LogicFalse());
+	if (debug()>=9) newp->dumpTree(cout,"-inside-out: ");
+	nodep->replaceWith(newp); pushDeletep(nodep); nodep=NULL;
+    }
+    virtual void visit(AstInsideRange* nodep, AstNUser* vup) {
+	// Just do each side; AstInside will rip these nodes out later
+	nodep->lhsp()->iterateAndNext(*this,vup);
+	nodep->rhsp()->iterateAndNext(*this,vup);
+	nodep->dtypeFrom(nodep->lhsp());
+    }
+
+    virtual void visit(AstIfaceRefDType* nodep, AstNUser* vup) {
+	if (nodep->didWidthAndSet()) return;  // This node is a dtype & not both PRELIMed+FINALed
+	UINFO(5,"   IFACEREF "<<nodep<<endl);
+	nodep->iterateChildren(*this, vup);
+	nodep->dtypep(nodep);
+	nodep->widthForce(1, 1); // Not really relevant
+	UINFO(4,"dtWidthed "<<nodep<<endl);
     }
     virtual void visit(AstNodeClassDType* nodep, AstNUser* vup) {
 	if (nodep->didWidthAndSet()) return;  // This node is a dtype & not both PRELIMed+FINALed
@@ -983,7 +1143,7 @@ private:
 	    } else {
 		AstSel* newp = new AstSel(nodep->fileline(), nodep->fromp()->unlinkFrBack(),
 					  memberp->lsb(), memberp->width());
-		newp->dtypep(memberp);
+		newp->dtypep(memberp->skipRefp());  // Must skip over the member to find the union; as the member may disappear later
 		newp->didWidth(true);  // Don't replace dtype with basic type
 		UINFO(9,"   MEMBERSEL -> "<<newp<<endl);
 		nodep->replaceWith(newp);
@@ -1000,12 +1160,17 @@ private:
     virtual void visit(AstPattern* nodep, AstNUser* vup) {
 	if (nodep->didWidthAndSet()) return;
 	UINFO(9,"PATTERN "<<nodep<<endl);
-	AstNodeDType* oldAssDTypep = m_assDTypep;
+	if (nodep->childDTypep()) nodep->dtypep(moveChildDTypeEdit(nodep));  // data_type '{ pattern }
+	if (!nodep->dtypep() && vup->c()->dtypep()) {  // Get it from parent assignment/pin/etc
+	    nodep->dtypep(vup->c()->dtypep());
+	}
+	AstNodeDType* vdtypep = nodep->dtypep();
+	if (!vdtypep) nodep->v3error("Unsupported/Illegal: Assignment pattern member not underneath a supported construct: "<<nodep->backp()->prettyTypeName());
 	{
-	    if (!m_assDTypep) nodep->v3error("Unsupported/Illegal: Assignment pattern not underneath an assignment");
-	    m_assDTypep = m_assDTypep->skipRefp();
-	    UINFO(9,"  adtypep "<<m_assDTypep<<endl);
-	    nodep->dtypep(m_assDTypep);
+	    vdtypep = vdtypep->skipRefp();
+	    nodep->dtypep(vdtypep);
+	    UINFO(9,"  adtypep "<<vdtypep<<endl);
+	    nodep->dtypep(vdtypep);
 	    for (AstPatMember* patp = nodep->itemsp()->castPatMember(); patp; patp = patp->nextp()->castPatMember()) {
 		// Determine replication count, and replicate initial value as widths need to be individually determined
 		int times = visitPatMemberRep(patp);
@@ -1023,7 +1188,10 @@ private:
 		    patp->unlinkFrBack();
 		}
 	    }
-	    if (AstNodeClassDType* classp = m_assDTypep->castNodeClassDType()) {
+	    while (AstConstDType* classp = vdtypep->castConstDType()) {
+		vdtypep = classp->subDTypep()->skipRefp();
+	    }
+	    if (AstNodeClassDType* classp = vdtypep->castNodeClassDType()) {
 		// Due to "default" and tagged patterns, we need to determine
 		// which member each AstPatMember corresponds to before we can
 		// determine the dtypep for that PatMember's value, and then
@@ -1077,9 +1245,9 @@ private:
 			patp = it->second;
 		    }
 		    // Determine initial values
-		    m_assDTypep = memp;
+		    vdtypep = memp;
 		    patp->dtypep(memp);
-		    patp->accept(*this,WidthVP(patp->width(),patp->width(),BOTH).p());
+		    patp->accept(*this,WidthVP(memp,BOTH).p());
 		    // Convert to concat for now
 		    if (!newp) newp = patp->lhsp()->unlinkFrBack();
 		    else {
@@ -1095,16 +1263,16 @@ private:
 		else nodep->v3error("Assignment pattern with no members");
 		pushDeletep(nodep); nodep = NULL;  // Deletes defaultp also, if present
 	    } else {
-		nodep->v3error("Unsupported: Assignment pattern applies against non struct/union: "<<m_assDTypep->prettyTypeName());
+		nodep->v3error("Unsupported: Assignment pattern applies against non struct/union: "<<vdtypep->prettyTypeName());
 	    }
 	}
-	m_assDTypep = oldAssDTypep;
     }
     virtual void visit(AstPatMember* nodep, AstNUser* vup) {
-	if (!nodep->dtypep()) nodep->v3fatalSrc("Pattern member type not assigned by AstPattern visitor");
-	if (!m_assDTypep) nodep->v3error("Unsupported/Illegal: Assignment pattern member not underneath an assignment");
+	AstNodeDType* vdtypep = vup->c()->dtypep();
+	if (!vdtypep) nodep->v3fatalSrc("Pattern member type not assigned by AstPattern visitor");
+	nodep->dtypep(vdtypep);
 	nodep->lhsp()->dtypeFrom(nodep);
-	nodep->iterateChildren(*this,WidthVP(nodep->dtypep()->width(),nodep->dtypep()->width(),BOTH).p());
+	nodep->iterateChildren(*this,WidthVP(nodep->dtypep(),BOTH).p());
 	widthCheck(nodep,"LHS",nodep->lhsp(),nodep->width(),nodep->width());
     }
     int visitPatMemberRep(AstPatMember* nodep) {
@@ -1138,12 +1306,10 @@ private:
 
     virtual void visit(AstNodeCase* nodep, AstNUser*) {
 	// TOP LEVEL NODE
-	AstNodeCase* lastCasep = m_casep;
-	m_casep = nodep;
 	nodep->exprp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,PRELIM).p());
 	for (AstCaseItem* nextip, *itemp = nodep->itemsp(); itemp; itemp=nextip) {
 	    nextip = itemp->nextp()->castCaseItem(); // Prelim may cause the node to get replaced
-	    if (!m_casep->castGenCase()) itemp->bodysp()->iterateAndNext(*this);
+	    if (!nodep->castGenCase()) itemp->bodysp()->iterateAndNext(*this);
 	    for (AstNode* nextcp, *condp = itemp->condsp(); condp; condp=nextcp) {
 		nextcp = condp->nextp(); // Prelim may cause the node to get replaced
 		condp->iterate(*this,WidthVP(ANYSIZE,0,PRELIM).p()); condp=NULL;
@@ -1167,7 +1333,6 @@ private:
 	    }
 	}
         widthCheck(nodep,"Case expression",nodep->exprp(),width,mwidth);
-	m_casep = lastCasep;
     }
     virtual void visit(AstNodeFor* nodep, AstNUser*) {
 	// TOP LEVEL NODE
@@ -1204,13 +1369,13 @@ private:
     virtual void visit(AstNodeAssign* nodep, AstNUser*) {
 	// TOP LEVEL NODE
 	//if (debug()) nodep->dumpTree(cout,"  AssignPre: ");
-	AstNodeDType* oldAssDTypep = m_assDTypep;
 	{
+	    //if (debug()) nodep->dumpTree(cout,"-    assin:  ");
 	    nodep->lhsp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,BOTH).p());
 	    if (!nodep->lhsp()->dtypep()) nodep->v3fatalSrc("How can LHS be untyped?");
 	    if (!nodep->lhsp()->dtypep()->widthSized()) nodep->v3fatalSrc("How can LHS be unsized?");
-	    m_assDTypep = nodep->lhsp()->dtypep();
-	    nodep->rhsp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,PRELIM).p());
+	    nodep->rhsp()->iterateAndNext(*this,WidthVP(nodep->lhsp()->dtypep(),ANYSIZE,0,PRELIM).p());
+	    //if (debug()) nodep->dumpTree(cout,"-    assign: ");
 	    if (!nodep->lhsp()->isDouble() && nodep->rhsp()->isDouble()) {
 		spliceCvtS(nodep->rhsp(), false);  // Round RHS
 	    } else if (nodep->lhsp()->isDouble() && !nodep->rhsp()->isDouble()) {
@@ -1220,7 +1385,7 @@ private:
 	    if (awidth==0) {
 		awidth = nodep->rhsp()->width();	// Parameters can propagate by unsized assignment
 	    }
-	    nodep->rhsp()->iterateAndNext(*this,WidthVP(awidth,awidth,FINAL).p());
+	    nodep->rhsp()->iterateAndNext(*this,WidthVP(nodep->lhsp()->dtypep(),awidth,awidth,FINAL).p());
 	    nodep->dtypeFrom(nodep->lhsp());
 	    nodep->dtypeChgWidth(awidth,awidth);  // We know the assign will truncate, so rather
 	    // than using "width" and have the optimizer truncate the result, we do
@@ -1229,7 +1394,6 @@ private:
 	    widthCheck(nodep,"Assign RHS",nodep->rhsp(),awidth,awidth);
 	    //if (debug()) nodep->dumpTree(cout,"  AssignOut: ");
 	}
-	m_assDTypep = oldAssDTypep;
     }
     virtual void visit(AstSFormatF* nodep, AstNUser*) {
 	// Excludes NodeDisplay, see below
@@ -1341,6 +1505,9 @@ private:
     virtual void visit(AstReadMem* nodep, AstNUser*) {
 	nodep->filenamep()->iterateAndNext(*this,WidthVP(ANYSIZE,0,BOTH).p());
 	nodep->memp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,BOTH).p());
+	if (!nodep->memp()->dtypep()->skipRefp()->castUnpackArrayDType()) {
+	    nodep->memp()->v3error("Unsupported: $readmem into other than unpacked array");
+	}
 	nodep->lsbp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,BOTH).p());
 	nodep->msbp()->iterateAndNext(*this,WidthVP(ANYSIZE,0,BOTH).p());
     }
@@ -1416,6 +1583,16 @@ private:
 				       <<" generates "<<expwidth<<" bits.");
 			// otherwise would need some mess to force both sides to proper size
 		    }
+		}
+		// TODO Simple dtype checking, should be a more general check
+		bool hiArray = nodep->exprp()->dtypep()->skipRefp()->castUnpackArrayDType();
+		bool loArray = nodep->modVarp()->dtypep()->skipRefp()->castUnpackArrayDType();
+		if (loArray != hiArray) {
+		    nodep->v3error("Illegal port connection '"<<nodep->prettyName()<<"',"
+				   <<" mismatch between port which is"<<(hiArray?"":" not")<<" an array,"
+				   <<" and expression which is"<<(loArray?"":" not")<<" an array.");
+		    UINFO(1,"    Related lo: "<<nodep->exprp()->dtypep()->skipRefp()<<endl);
+		    UINFO(1,"    Related hi: "<<nodep->modVarp()->dtypep()->skipRefp()<<endl);
 		}
 		if (inputPin) {
 		    // input pin is lhs, expr is rhs; resize expr to match
@@ -1541,7 +1718,7 @@ private:
 			    handle.relink(newp);
 			    pinp = newp;
 			}
-			pinp->accept(*this,WidthVP(portp->width(),portp->widthMin(),PRELIM).p());  pinp=NULL;
+			pinp->accept(*this,WidthVP(portp->dtypep(),PRELIM).p());  pinp=NULL;
 		    } else if (accept_mode==1) {
 			// Change data types based on above accept completion
 			if (portp->isDouble()) {
@@ -1549,7 +1726,7 @@ private:
 			}
 		    } else if (accept_mode==2) {
 			// Do PRELIM again, because above accept may have exited early due to node replacement
-			pinp->accept(*this,WidthVP(portp->width(),portp->widthMin(),BOTH).p());
+			pinp->accept(*this,WidthVP(portp->dtypep(),BOTH).p());
 			if ((portp->isOutput() || portp->isInout())
 			    && pinp->width() != portp->width()) {
 			    pinp->v3error("Unsupported: Function output argument '"<<portp->prettyName()<<"'"
@@ -1856,7 +2033,8 @@ private:
 	int width  = max(vup->c()->width(),    max(nodep->lhsp()->width(),    nodep->rhsp()->width()));
 	int mwidth = max(vup->c()->widthMin(), max(nodep->lhsp()->widthMin(), nodep->rhsp()->widthMin()));
 	bool expSigned = (nodep->lhsp()->isSigned() && nodep->rhsp()->isSigned());
-	nodep->dtypeChgWidthSigned(width,mwidth,expSigned);
+	nodep->dtypeChgWidthSigned(width,mwidth,
+				   expSigned?AstNumeric::SIGNED : AstNumeric::UNSIGNED);
 	if (vup->c()->final()) {
 	    // Final call, so make sure children check their sizes
 	    nodep->lhsp()->iterateAndNext(*this,WidthVP(width,mwidth,FINAL).p());
@@ -2027,7 +2205,8 @@ private:
 	    linker.relink(newp);
 	    nodep=newp;
 	}
-	nodep->dtypeChgWidthSigned(expWidth,expWidth,expSigned);
+	nodep->dtypeChgWidthSigned(expWidth,expWidth,
+				   expSigned?AstNumeric::SIGNED : AstNumeric::UNSIGNED);
 	UINFO(4,"             _new: "<<nodep<<endl);
     }
 
@@ -2323,12 +2502,114 @@ private:
 	return nodep;
     }
 
+    int dimensionValue(AstNodeDType* nodep, AstAttrType attrType, int dim) {
+	// Return the dimension value for the specified attribute and constant dimension
+	AstNodeDType* dtypep = nodep->skipRefp();
+	VNumRange declRange;  // ranged() set false
+	for (int i = 1; i <= dim; ++i) {
+	    //UINFO(9, "   dim at "<<dim<<"  "<<dtypep<<endl);
+	    declRange = VNumRange();  // ranged() set false
+	    if (AstNodeArrayDType* adtypep = dtypep->castNodeArrayDType()) {
+		declRange = adtypep->declRange();
+		if (i<dim) dtypep = adtypep->subDTypep()->skipRefp();
+		continue;
+	    } else if (AstNodeClassDType* adtypep = dtypep->castNodeClassDType()) {
+		declRange = adtypep->declRange();
+		if (adtypep) {} // UNUSED
+		break;  // Sub elements don't look like arrays and can't iterate into
+	    } else if (AstBasicDType* adtypep = dtypep->castBasicDType()) {
+		if (adtypep->isRanged()) declRange = adtypep->declRange();
+		break;
+	    }
+	    break;
+	}
+	int val = 0;
+	if (attrType==AstAttrType::DIM_BITS) {
+	    int bits = 1;
+	    while (dtypep) {
+		//UINFO(9, "   bits at "<<bits<<"  "<<dtypep<<endl);
+		if (AstNodeArrayDType* adtypep = dtypep->castNodeArrayDType()) {
+		    bits *= adtypep->declRange().elements();
+		    dtypep = adtypep->subDTypep()->skipRefp();
+		    continue;
+		} else if (AstNodeClassDType* adtypep = dtypep->castNodeClassDType()) {
+		    bits *= adtypep->width();
+		    break;
+		} else if (AstBasicDType* adtypep = dtypep->castBasicDType()) {
+		    bits *= adtypep->width();
+		    break;
+		}
+		break;
+	    }
+	    if (dim == 0) {
+		val = 0;
+	    } else if (dim == 1 && !declRange.ranged() && bits==1) {  // $bits should be sane for non-arrays
+		val = nodep->width();
+	    } else {
+		val = bits;
+	    }
+	} else if (attrType==AstAttrType::DIM_HIGH) {
+	    val = !declRange.ranged() ? 0 : declRange.hi();
+	} else if (attrType==AstAttrType::DIM_LEFT) {
+	    val = !declRange.ranged() ? 0 : declRange.left();
+	} else if (attrType==AstAttrType::DIM_LOW) {
+	    val = !declRange.ranged() ? 0 : declRange.lo();
+	} else if (attrType==AstAttrType::DIM_RIGHT) {
+	    val = !declRange.ranged() ? 0 : declRange.right();
+	} else if (attrType==AstAttrType::DIM_INCREMENT) {
+	    val = (declRange.ranged() && declRange.littleEndian()) ? -1 : 1;
+	} else if (attrType==AstAttrType::DIM_SIZE) {
+	    val = !declRange.ranged() ? 0 : declRange.elements();
+	} else {
+	    nodep->v3fatalSrc("Missing DIM ATTR type case");
+	}
+	UINFO(9," $dimension "<<attrType.ascii()<<"("<<((void*)dtypep)<<","<<dim<<")="<<val<<endl);
+	return val;
+    }
+    AstVar* dimensionVarp(AstNodeDType* nodep, AstAttrType attrType) {
+	// Return a variable table which has specified dimension properties for this variable
+	pair<uint32_t,uint32_t> dim = nodep->skipRefp()->dimensions(true);
+	uint32_t maxdim = dim.first+dim.second;
+	//
+	AstInitArray* initp = new AstInitArray (nodep->fileline(), NULL);
+	AstNodeDType* vardtypep = new AstUnpackArrayDType(nodep->fileline(),
+							  nodep->findSigned32DType(),
+							  new AstRange(nodep->fileline(), maxdim, 0));
+	v3Global.rootp()->typeTablep()->addTypesp(vardtypep);
+	AstVar* varp = new AstVar (nodep->fileline(), AstVarType::MODULETEMP,
+				   "__Vdimtable" + cvtToStr(m_dtTables++),
+				   vardtypep);
+	varp->isConst(true);
+	varp->isStatic(true);
+	varp->valuep(initp);
+	// Add to root, as don't know module we are in, and aids later structure sharing
+	v3Global.rootp()->dollarUnitPkgAddp()->addStmtp(varp);
+	// Element 0 is a non-index and has speced values
+	initp->addInitsp(new AstConst(nodep->fileline(), AstConst::Signed32(),
+				      dimensionValue(nodep, attrType, 0)));
+	for (unsigned i=1; i<maxdim+1; ++i) {
+	    initp->addInitsp(new AstConst(nodep->fileline(), AstConst::Signed32(),
+					  dimensionValue(nodep, attrType, i)));
+	}
+	varp->iterate(*this);  // May have already done $unit so must do this var
+	return varp;
+    }
+
     //----------------------------------------------------------------------
     // METHODS - special type detection
     bool backRequiresUnsigned(AstNode* nodep) {
 	// The spec doesn't state this, but if you have an array select where the selection
 	// index is NOT wide enough, you do not sign extend, but always zero extend.
 	return (nodep->castArraySel() || nodep->castSel());
+    }
+    void checkConstantOrReplace(AstNode* nodep, const string& message) {
+	// See also V3WidthSel::checkConstantOrReplace
+	// Note can't call V3Const::constifyParam(nodep) here, as constify may change nodep on us!
+	if (!nodep->castConst()) {
+	    nodep->v3error(message);
+	    nodep->replaceWith(new AstConst(nodep->fileline(), AstConst::Unsized32(), 1));
+	    pushDeletep(nodep); nodep=NULL;
+	}
     }
 
 public:
@@ -2338,12 +2619,11 @@ public:
 	//			    // don't wish to trigger errors
 	m_paramsOnly = paramsOnly;
 	m_cellRangep = NULL;
-	m_casep = NULL;
 	m_funcp = NULL;
 	m_initialp = NULL;
 	m_attrp = NULL;
-	m_assDTypep = NULL;
 	m_doGenerate = doGenerate;
+	m_dtTables = 0;
     }
     AstNode* mainAcceptEdit(AstNode* nodep) {
 	return nodep->acceptSubtreeReturnEdits(*this, WidthVP(ANYSIZE,0,BOTH).p());

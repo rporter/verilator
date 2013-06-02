@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -79,10 +79,20 @@ public:
 	puts (nodep->isWide()?"W":(nodep->isQuad()?"Q":"I"));
     }
     void emitScIQW(AstVar* nodep) {
-	puts (nodep->isScBv()?"SW":(nodep->isScQuad()?"SQ":"SI"));
+	puts (nodep->isScBigUint() ? "SB"
+	      : nodep->isScUint()  ? "SU"
+	      : nodep->isScBv()    ? "SW"
+	      : (nodep->isScQuad() ? "SQ" : "SI"));
     }
     void emitOpName(AstNode* nodep, const string& format,
 		    AstNode* lhsp, AstNode* rhsp, AstNode* thsp);
+    void emitDeclArrayBrackets(AstVar* nodep) {
+	// This isn't very robust and may need cleanup for other data types
+	for (AstUnpackArrayDType* arrayp=nodep->dtypeSkipRefp()->castUnpackArrayDType(); arrayp;
+	     arrayp = arrayp->subDTypep()->skipRefp()->castUnpackArrayDType()) {
+	    puts("["+cvtToStr(arrayp->elementsConst())+"]");
+	}
+    }
 
     // VISITORS
     virtual void visit(AstNodeAssign* nodep, AstNUser*) {
@@ -321,12 +331,12 @@ public:
 	{
 	    AstVarRef* varrefp = nodep->memp()->castVarRef();
 	    if (!varrefp) { nodep->v3error("Readmem loading non-variable"); }
-	    else if (AstArrayDType* adtypep = varrefp->varp()->dtypeSkipRefp()->castArrayDType()) {
-		puts(cvtToStr(varrefp->varp()->dtypep()->arrayElements()));
+	    else if (AstUnpackArrayDType* adtypep = varrefp->varp()->dtypeSkipRefp()->castUnpackArrayDType()) {
+		puts(cvtToStr(varrefp->varp()->dtypep()->arrayUnpackedElements()));
 		array_lsb = adtypep->lsb();
 	    }
 	    else {
-		nodep->v3error("Readmem loading non-arrayed variable");
+		nodep->v3error("Readmem loading other than unpacked-array variable");
 	    }
 	}
 	putbs(", ");
@@ -785,7 +795,7 @@ class EmitCImp : EmitCStmts {
 
 	if (!m_blkChangeDetVec.empty()) puts("return __req;\n");
 
-//	puts("__Vm_activity = true;\n");
+	//puts("__Vm_activity = true;\n");
 	puts("}\n");
     }
 
@@ -872,7 +882,6 @@ public:
 void EmitCStmts::emitVarDecl(AstVar* nodep, const string& prefixIfImp) {
     AstBasicDType* basicp = nodep->basicp();  if (!basicp) nodep->v3fatalSrc("Unimplemented: Outputting this data type");
     if (nodep->isIO()) {
-	bool isArray = !nodep->dtypeSkipRefp()->castBasicDType();
 	if (nodep->isSc()) {
 	    m_ctorVarsVec.push_back(nodep);
 	    ofp()->putAlign(nodep->isStatic(), 4);	// sc stuff is a structure, so bigger alignment
@@ -888,12 +897,7 @@ void EmitCStmts::emitVarDecl(AstVar* nodep, const string& prefixIfImp) {
 		puts(">\t");
 	    }
 	    puts(nodep->name());
-	    if (isArray) {
-		for (AstArrayDType* arrayp=nodep->dtypeSkipRefp()->castArrayDType(); arrayp;
-		     arrayp = arrayp->subDTypep()->skipRefp()->castArrayDType()) {
-		    puts("["+cvtToStr(arrayp->elementsConst())+"]");
-		}
-	    }
+	    emitDeclArrayBrackets(nodep);
 	    puts(";\n");
 	} else { // C++ signals
 	    ofp()->putAlign(nodep->isStatic(), nodep->dtypeSkipRefp()->widthAlignBytes(),
@@ -906,36 +910,20 @@ void EmitCStmts::emitVarDecl(AstVar* nodep, const string& prefixIfImp) {
 	    if (nodep->isQuad()) puts("64");
 	    else if (nodep->widthMin() <= 8) puts("8");
 	    else if (nodep->widthMin() <= 16) puts("16");
+	    else if (nodep->isWide()) puts("W");
 
-	    if (isArray) {
-		if (nodep->isWide()) puts("W");
-		puts("("+nodep->name());
-		for (AstArrayDType* arrayp=nodep->dtypeSkipRefp()->castArrayDType(); arrayp;
-		     arrayp = arrayp->subDTypep()->skipRefp()->castArrayDType()) {
-		    puts("["+cvtToStr(arrayp->elementsConst())+"]");
-		}
-		puts(","+cvtToStr(basicp->msb())+","+cvtToStr(basicp->lsb()));
-		if (basicp->isWide()) puts(","+cvtToStr(basicp->widthWords()));
-	    } else {
-		if (!basicp->isWide())
-		    puts("("+nodep->name()
-			 +","+cvtToStr(basicp->msb())
-			 +","+cvtToStr(basicp->lsb()));
-		else puts("W("+nodep->name()
-			  +","+cvtToStr(basicp->msb())
-			  +","+cvtToStr(basicp->lsb())
-			  +","+cvtToStr(basicp->widthWords()));
-	    }
+	    puts("("+nodep->name());
+	    emitDeclArrayBrackets(nodep);
+	    // If it's a packed struct/array then nodep->width is the whole thing, msb/lsb is just lowest dimension
+	    puts(","+cvtToStr(basicp->lsb()+nodep->width()-1)
+		 +","+cvtToStr(basicp->lsb()));
+	    if (nodep->isWide()) puts(","+cvtToStr(nodep->widthWords()));
 	    puts(");\n");
 	}
     } else if (basicp && basicp->isOpaque()) {
 	// strings and other fundamental c types
 	puts(nodep->vlArgType(true,false));
-	// This isn't very robust and may need cleanup for other data types
-	for (AstArrayDType* arrayp=nodep->dtypeSkipRefp()->castArrayDType(); arrayp;
-	     arrayp = arrayp->subDTypep()->skipRefp()->castArrayDType()) {
-	    puts("["+cvtToStr(arrayp->elementsConst())+"]");
-	}
+	emitDeclArrayBrackets(nodep);
 	puts(";\n");
     } else {
 	// Arrays need a small alignment, but may need different padding after.
@@ -957,13 +945,11 @@ void EmitCStmts::emitVarDecl(AstVar* nodep, const string& prefixIfImp) {
 	}
 	if (prefixIfImp!="") { puts(prefixIfImp); puts("::"); }
 	puts(nodep->name());
-	// This isn't very robust and may need cleanup for other data types
-	for (AstArrayDType* arrayp=nodep->dtypeSkipRefp()->castArrayDType(); arrayp;
-	     arrayp = arrayp->subDTypep()->skipRefp()->castArrayDType()) {
-	    puts("["+cvtToStr(arrayp->elementsConst())+"]");
-	}
-	puts(","+cvtToStr(basicp->msb())+","+cvtToStr(basicp->lsb()));
-	if (basicp->isWide()) puts(","+cvtToStr(basicp->widthWords()));
+	emitDeclArrayBrackets(nodep);
+	// If it's a packed struct/array then nodep->width is the whole thing, msb/lsb is just lowest dimension
+	puts(","+cvtToStr(basicp->lsb()+nodep->width()-1)
+	     +","+cvtToStr(basicp->lsb()));
+	if (nodep->isWide()) puts(","+cvtToStr(nodep->widthWords()));
 	puts(");\n");
     }
 }
@@ -1328,7 +1314,7 @@ void EmitCImp::emitVarResets(AstNodeModule* modp) {
 	    }
 	    else if (AstInitArray* initarp = varp->valuep()->castInitArray()) {
 		AstConst* constsp = initarp->initsp()->castConst();
-		if (AstArrayDType* arrayp = varp->dtypeSkipRefp()->castArrayDType()) {
+		if (AstUnpackArrayDType* arrayp = varp->dtypeSkipRefp()->castUnpackArrayDType()) {
 		    for (int i=0; i<arrayp->elementsConst(); i++) {
 			if (!constsp) initarp->v3fatalSrc("Not enough values in array initalizement");
 			emitSetVarConstant(varp->name()+"["+cvtToStr(i)+"]", constsp);
@@ -1341,8 +1327,8 @@ void EmitCImp::emitVarResets(AstNodeModule* modp) {
 	    else {
 		int vects = 0;
 		// This isn't very robust and may need cleanup for other data types
-		for (AstArrayDType* arrayp=varp->dtypeSkipRefp()->castArrayDType(); arrayp;
-		     arrayp = arrayp->subDTypep()->skipRefp()->castArrayDType()) {
+		for (AstUnpackArrayDType* arrayp=varp->dtypeSkipRefp()->castUnpackArrayDType(); arrayp;
+		     arrayp = arrayp->subDTypep()->skipRefp()->castUnpackArrayDType()) {
 		    int vecnum = vects++;
 		    if (arrayp->msb() < arrayp->lsb()) varp->v3fatalSrc("Should have swapped msb & lsb earlier.");
 		    string ivar = string("__Vi")+cvtToStr(vecnum);
@@ -1367,17 +1353,16 @@ void EmitCImp::emitVarResets(AstNodeModule* modp) {
 		} else {
 		    puts(varp->name());
 		    for (int v=0; v<vects; ++v) puts( "[__Vi"+cvtToStr(v)+"]");
-		    if (zeroit) {
-			// We want to force an initial edge on uninitialized clocks (from 'X' to
-			// whatever the first value is). Since the class is instantiated before
-			// initial blocks are evaluated, this should not clash with any initial
-			// block settings. Clocks are always BIT datatypes, so zeroit is true.
-			if (v3Global.opt.xInitialEdge()
-			    && (0 == varp->name().find("__Vclklast__"))) {
-			    puts(" = 1;\n");
-			} else {
-			    puts(" = 0;\n");
-			}
+		    // If --x-initial-edge is set, we want to force an initial
+		    // edge on uninitialized clocks (from 'X' to whatever the
+		    // first value is). Since the class is instantiated before
+		    // initial blocks are evaluated, this should not clash
+		    // with any initial block settings.
+		    if (zeroit || (v3Global.opt.xInitialEdge() && varp->isUsedClock())) {
+			puts(" = 0;\n");
+		    } else if (v3Global.opt.xInitialEdge()
+			       && (0 == varp->name().find("__Vclklast__"))) {
+			puts(" = 1;\n");
 		    } else {
 			puts(" = VL_RAND_RESET_");
 			emitIQW(varp);
@@ -1508,8 +1493,8 @@ void EmitCImp::emitSavableImp(AstNodeModule* modp) {
 		    else {
 			int vects = 0;
 			// This isn't very robust and may need cleanup for other data types
-			for (AstArrayDType* arrayp=varp->dtypeSkipRefp()->castArrayDType(); arrayp;
-			     arrayp = arrayp->subDTypep()->skipRefp()->castArrayDType()) {
+			for (AstUnpackArrayDType* arrayp=varp->dtypeSkipRefp()->castUnpackArrayDType(); arrayp;
+			     arrayp = arrayp->subDTypep()->skipRefp()->castUnpackArrayDType()) {
 			    int vecnum = vects++;
 			    if (arrayp->msb() < arrayp->lsb()) varp->v3fatalSrc("Should have swapped msb & lsb earlier.");
 			    string ivar = string("__Vi")+cvtToStr(vecnum);
@@ -1599,8 +1584,8 @@ void EmitCImp::emitSensitives() {
 		if (varp->isInput() && (varp->isScSensitive() || varp->isUsedClock())) {
 		    int vects = 0;
 		    // This isn't very robust and may need cleanup for other data types
-		    for (AstArrayDType* arrayp=varp->dtypeSkipRefp()->castArrayDType(); arrayp;
-			 arrayp = arrayp->subDTypep()->skipRefp()->castArrayDType()) {
+		    for (AstUnpackArrayDType* arrayp=varp->dtypeSkipRefp()->castUnpackArrayDType(); arrayp;
+			 arrayp = arrayp->subDTypep()->skipRefp()->castUnpackArrayDType()) {
 			int vecnum = vects++;
 			if (arrayp->msb() < arrayp->lsb()) varp->v3fatalSrc("Should have swapped msb & lsb earlier.");
 			string ivar = string("__Vi")+cvtToStr(vecnum);
@@ -1697,9 +1682,9 @@ void EmitCStmts::emitVarList(AstNode* firstp, EisWhich which, const string& pref
 			int sigbytes = varp->dtypeSkipRefp()->widthAlignBytes();
 			int sortbytes = sortmax-1;
 			if (varp->isUsedClock() && varp->widthMin()==1) sortbytes = 0;
-			else if (varp->dtypeSkipRefp()->castArrayDType()) sortbytes=8;
+			else if (varp->dtypeSkipRefp()->castUnpackArrayDType()) sortbytes=8;
 			else if (varp->basicp() && varp->basicp()->isOpaque()) sortbytes=7;
-			else if (varp->isScBv()) sortbytes=6;
+			else if (varp->isScBv() || varp->isScBigUint()) sortbytes=6;
 			else if (sigbytes==8) sortbytes=5;
 			else if (sigbytes==4) sortbytes=4;
 			else if (sigbytes==2) sortbytes=2;
@@ -1732,7 +1717,7 @@ void EmitCImp::emitIntFuncDecls(AstNodeModule* modp) {
 	}
     }
 
-    sort(funcsp.begin(), funcsp.end(), CmpName());
+    stable_sort(funcsp.begin(), funcsp.end(), CmpName());
 
     for (vector<AstCFunc*>::iterator it = funcsp.begin(); it != funcsp.end(); ++it) {
 	AstCFunc* funcp = *it;
@@ -2172,6 +2157,21 @@ class EmitCTrace : EmitCStmts {
 	AstVar* varp = varrefp->varp();
 	return varp->isSc() && varp->isScBv();
     }
+
+    bool emitTraceIsScBigUint(AstTraceInc* nodep) {
+	AstVarRef* varrefp = nodep->valuep()->castVarRef();
+	if (!varrefp) return false;
+	AstVar* varp = varrefp->varp();
+	return varp->isSc() && varp->isScBigUint();
+    }
+
+    bool emitTraceIsScUint(AstTraceInc* nodep) {
+	AstVarRef* varrefp = nodep->valuep()->castVarRef();
+	if (!varrefp) return false;
+	AstVar* varp = varrefp->varp();
+	return varp->isSc() && varp->isScUint();
+    }
+
     void emitTraceInitOne(AstTraceDecl* nodep) {
 	if (nodep->isDouble()) {
 	    puts("vcdp->declDouble");
@@ -2207,7 +2207,7 @@ class EmitCTrace : EmitCStmts {
 		       ? "full":"chg");
 	if (nodep->isDouble()) {
 	    puts("vcdp->"+full+"Double");
-	} else if (nodep->isWide() || emitTraceIsScBv(nodep)) {
+	} else if (nodep->isWide() || emitTraceIsScBv(nodep) || emitTraceIsScBigUint(nodep)) {
 	    puts("vcdp->"+full+"Array");
 	} else if (nodep->isQuad()) {
 	    puts("vcdp->"+full+"Quad ");
@@ -2221,7 +2221,7 @@ class EmitCTrace : EmitCStmts {
 	puts(",");
 	emitTraceValue(nodep, arrayindex);
 	if (!nodep->isDouble()  // When float/double no longer have widths this can go
-	    && (nodep->declp()->left() || nodep->declp()->right() || emitTraceIsScBv(nodep))) {
+	    && (nodep->declp()->left() || nodep->declp()->right() || emitTraceIsScBv(nodep) || emitTraceIsScBigUint(nodep))) {
 	    puts(","+cvtToStr(nodep->declp()->widthMin()));
 	}
 	puts(");\n");
@@ -2231,16 +2231,19 @@ class EmitCTrace : EmitCStmts {
 	    AstVarRef* varrefp = nodep->valuep()->castVarRef();
 	    AstVar* varp = varrefp->varp();
 	    puts("(");
-	    if (emitTraceIsScBv(nodep)) puts("VL_SC_BV_DATAP(");
+	    if (emitTraceIsScBigUint(nodep)) puts("(vluint32_t*)");
+	    else if (emitTraceIsScBv(nodep)) puts("VL_SC_BV_DATAP(");
 	    varrefp->iterate(*this);	// Put var name out
 	    // Tracing only supports 1D arrays
-	    if (varp->dtypeSkipRefp()->castArrayDType()) {
+	    if (varp->dtypeSkipRefp()->castUnpackArrayDType()) {
 		if (arrayindex==-2) puts("[i]");
 		else if (arrayindex==-1) puts("[0]");
 		else puts("["+cvtToStr(arrayindex)+"]");
 	    }
 	    if (varp->isSc()) puts(".read()");
-	    if (emitTraceIsScBv(nodep)) puts(")");
+	    if (emitTraceIsScUint(nodep)) puts(nodep->isQuad() ? ".to_uint64()" : ".to_uint()");
+	    else if (emitTraceIsScBigUint(nodep)) puts(".get_raw()");
+	    else if (emitTraceIsScBv(nodep)) puts(")");
 	    puts(")");
 	} else {
 	    puts("(");

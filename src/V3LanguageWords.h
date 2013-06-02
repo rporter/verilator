@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2005-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2005-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -37,9 +37,9 @@ class V3LanguageWords {
     }
   public:
     string isKeyword(const string& kwd) {
-	map<string,string>::iterator iter = m_kwdMap.find(kwd);
-	if (iter == m_kwdMap.end()) return "";
-	return iter->second;
+	map<string,string>::iterator it = m_kwdMap.find(kwd);
+	if (it == m_kwdMap.end()) return "";
+	return it->second;
     }
 
   public:

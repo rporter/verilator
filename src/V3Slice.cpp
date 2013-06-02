@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -76,8 +76,8 @@ class SliceCloneVisitor : public AstNVisitor {
 	    if (m_vecIdx == (int)m_selBits.size()) {
 		m_selBits.push_back(vector<unsigned>());
 		AstVar* varp = m_refp->varp();
-		pair<uint32_t,uint32_t> arrDim = varp->dtypep()->dimensions();
-		uint32_t dimensions = arrDim.first + arrDim.second;
+		pair<uint32_t,uint32_t> arrDim = varp->dtypep()->dimensions(false);
+		uint32_t dimensions = arrDim.second;
 		for (uint32_t i = 0; i < dimensions; ++i) {
 		    m_selBits[m_vecIdx].push_back(0);
 		}
@@ -233,6 +233,7 @@ class SliceVisitor : public AstNVisitor {
 	    if (!selp) {
 		nodep->user1p(fromp->castVarRef());
 		selp = NULL;
+		break;
 	    } else {
 		fromp = selp->fromp();
 		if (fromp) ++dim;
@@ -252,7 +253,7 @@ class SliceVisitor : public AstNVisitor {
 	AstNode* topp = nodep;
 	for (unsigned i = start; i < start + count; ++i) {
 	    AstNodeDType* dtypep = varp->dtypep()->dtypeDimensionp(i-1);
-	    AstArrayDType* adtypep = dtypep->castArrayDType();
+	    AstUnpackArrayDType* adtypep = dtypep->castUnpackArrayDType();
 	    if (!adtypep) nodep->v3fatalSrc("insertImplicit tried to expand an array without an ArrayDType");
 	    vlsint32_t msb = adtypep->msb();
 	    vlsint32_t lsb = adtypep->lsb();
@@ -291,8 +292,8 @@ class SliceVisitor : public AstNVisitor {
 	// The LHS/RHS of an Assign may be to a Var that is an array. In this
 	// case we need to create a slice accross the entire Var
 	if (m_assignp && !nodep->backp()->castArraySel()) {
-	    pair<uint32_t,uint32_t> arrDim = nodep->varp()->dtypep()->dimensions();
-	    uint32_t dimensions = arrDim.first + arrDim.second;
+	    pair<uint32_t,uint32_t> arrDim = nodep->varp()->dtypep()->dimensions(false);
+	    uint32_t dimensions = arrDim.second;  // unpacked only
 	    if (dimensions > 0) {
 		AstVarRef* clonep = nodep->cloneTree(false);
 		clonep->user1p(nodep);
@@ -306,7 +307,7 @@ class SliceVisitor : public AstNVisitor {
     virtual void visit(AstExtend* nodep, AstNUser*) {
 	m_extend = true;
 	if (m_assignp && m_assignp->user2() > 1 && !m_assignError) {
-	    m_assignp->v3error("Unsupported: Assignment between packed arrays of different dimensions");
+	    m_assignp->v3error("Unsupported: Assignment between unpacked arrays of different dimensions");
 	    m_assignError = true;
 	}
 	nodep->iterateChildren(*this);
@@ -325,8 +326,8 @@ class SliceVisitor : public AstNVisitor {
 	if (nodep->user3()) return;  // Prevent recursion on just created nodes
 	unsigned dim = explicitDimensions(nodep);
 	AstVarRef* refp = nodep->user1p()->castNode()->castVarRef();
-	pair<uint32_t,uint32_t> arrDim = refp->varp()->dtypep()->dimensions();
-	uint32_t implicit = (arrDim.first + arrDim.second) - dim;
+	pair<uint32_t,uint32_t> arrDim = refp->varp()->dtypep()->dimensions(false);
+	uint32_t implicit = (arrDim.second) - dim;
 	if (implicit > 0) {
 	    AstArraySel* newp = insertImplicit(nodep->cloneTree(false), dim+1, implicit);
 	    nodep->replaceWith(newp); nodep = newp;
@@ -337,7 +338,7 @@ class SliceVisitor : public AstNVisitor {
 	    m_assignp->v3error("Slices of arrays in assignments must have the same unpacked dimensions");
 	} else if (!m_assignp->user2()) {
 	    if (m_extend && clones > 1 && !m_assignError) {
-		m_assignp->v3error("Unsupported: Assignment between packed arrays of different dimensions");
+		m_assignp->v3error("Unsupported: Assignment between unpacked arrays of different dimensions");
 		m_assignError = true;
 	    }
 	    if (clones > 1 && !refp->lvalue() && refp->varp() == m_lhsVarRefp->varp()
@@ -353,7 +354,7 @@ class SliceVisitor : public AstNVisitor {
     virtual void visit(AstSel* nodep, AstNUser*) {
 	m_extend = true;
 	if (m_assignp && m_assignp->user2() > 1 && !m_assignError) {
-	    m_assignp->v3error("Unsupported: Assignment between packed arrays of different dimensions");
+	    m_assignp->v3error("Unsupported: Assignment between unpacked arrays of different dimensions");
 	    m_assignError = true;
 	}
 	nodep->iterateChildren(*this);
@@ -427,13 +428,13 @@ class SliceVisitor : public AstNVisitor {
 	    nodep->iterateChildren(*this);
 	} else {
 	    AstVarRef* refp = findVarRefRecurse(nodep->lhsp());
-	    ArrayDimensions varDim = refp->varp()->dtypep()->dimensions();
+	    ArrayDimensions varDim = refp->varp()->dtypep()->dimensions(false);
 	    if ((int)(dim - varDim.second) < 0) {
 		// Unpacked dimensions are referenced first, make sure we have them all
 		nodep->v3error("Unary operator used across unpacked dimensions");
-	    } else if ((int)(dim - (varDim.first + varDim.second)) < 0) {
+	    } else if ((int)(dim - (varDim.second)) < 0) {
 		// Implicit packed dimensions are allowed, make them explicit
-		uint32_t newDim = (varDim.first + varDim.second) - dim;
+		uint32_t newDim = (varDim.second) - dim;
 		AstNode* clonep = nodep->lhsp()->cloneTree(false);
 		clonep->user1p(refp);
 		AstNode* newp = insertImplicit(clonep, dim+1, newDim);

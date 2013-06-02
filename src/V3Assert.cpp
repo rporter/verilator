@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2005-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2005-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -62,6 +62,7 @@ private:
 	nodep->displayType(AstDisplayType::DT_WRITE);
 	nodep->fmtp()->text(assertDisplayMessage(nodep, prefix, nodep->fmtp()->text()));
 	AstNode* timesp = nodep->fmtp()->exprsp(); if (timesp) timesp->unlinkFrBack();
+	// cppcheck-suppress nullPointer
 	timesp = timesp->addNext(new AstTime(nodep->fileline()));
 	nodep->fmtp()->exprsp(timesp);
 	if (!nodep->fmtp()->scopeNamep() && nodep->fmtp()->formatScopeTracking()) {
@@ -136,6 +137,7 @@ private:
 	if (nodep->castPslAssert()) ifp->branchPred(AstBranchPred::BP_UNLIKELY);
 	//
 	AstNode* newp = new AstAlways (nodep->fileline(),
+				       VAlwaysKwd::ALWAYS,
 				       sentreep,
 				       bodysp);
 	// Install it

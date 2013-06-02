@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -41,6 +41,7 @@ public:
 	L1364_2005,
 	L1800_2005,
 	L1800_2009,
+	L1800_2012,
 	// ***Add new elements below also***
 	_ENUM_END
     };
@@ -52,11 +53,13 @@ public:
 	    "1364-2001",
 	    "1364-2005",
 	    "1800-2005",
-	    "1800-2009"
+	    "1800-2009",
+	    "1800-2012"
 	};
 	return names[m_e];
     };
-    static V3LangCode mostRecent() { return V3LangCode(L1800_2009); }
+    static V3LangCode mostRecent() { return V3LangCode(L1800_2012); }
+    bool systemVerilog() const { return m_e == L1800_2005 || m_e == L1800_2009 || m_e == L1800_2012; }
     bool legal() const { return m_e != L_ERROR; }
     //
     enum en m_e;

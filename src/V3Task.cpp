@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -979,9 +979,13 @@ private:
 	// Iterate into the FTask we are calling.  Note it may be under a different
 	// scope then the caller, so we need to restore state.
 	AstScope* oldscopep = m_scopep;
+	InsertMode prevInsMode = m_insMode;
+	AstNode* prevInsStmtp = m_insStmtp;
 	m_scopep = m_statep->getScope(nodep);
 	nodep->accept(*this);
 	m_scopep = oldscopep;
+	m_insMode = prevInsMode;
+	m_insStmtp = prevInsStmtp;
     }
     void insertBeforeStmt(AstNode* nodep, AstNode* newp) {
 	// See also AstNode::addBeforeStmt; this predates that function

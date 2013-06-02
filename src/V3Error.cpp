@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -44,6 +44,7 @@ bool V3Error::s_describedEachWarn[V3ErrorCode::_ENUM_MAX];
 bool V3Error::s_describedWarnings = false;
 bool V3Error::s_pretendError[V3ErrorCode::_ENUM_MAX];
 V3Error::MessagesSet V3Error::s_messages;
+V3Error::ErrorExitCb V3Error::s_errorExitCb = NULL;
 
 struct v3errorIniter {
     v3errorIniter() {  V3Error::init(); }
@@ -89,8 +90,8 @@ const string FileLineSingleton::filenameLetters(int no) {
 //! We associate a language with each source file, so we also set the default
 //! for this.
 int FileLineSingleton::nameToNumber(const string& filename) {
-    FileNameNumMap::const_iterator iter = m_namemap.find(filename);
-    if (VL_LIKELY(iter != m_namemap.end())) return iter->second;
+    FileNameNumMap::const_iterator it = m_namemap.find(filename);
+    if (VL_LIKELY(it != m_namemap.end())) return it->second;
     int num = m_names.size();
     m_names.push_back(filename);
     m_languages.push_back(V3LangCode::mostRecent());
@@ -482,7 +483,8 @@ void V3Error::v3errorEnd (ostringstream& sstr) {
 		}
 #ifndef _V3ERROR_NO_GLOBAL_
 		if (debug()) {
-		    v3Global.rootp()->dumpTreeFile(v3Global.debugFilename("final.tree",99));
+		    v3Global.rootp()->dumpTreeFile(v3Global.debugFilename("final.tree",990));
+		    if (s_errorExitCb) s_errorExitCb();
 		    V3Stats::statsFinalAll(v3Global.rootp());
 		    V3Stats::statsReport();
 		}
@@ -490,6 +492,11 @@ void V3Error::v3errorEnd (ostringstream& sstr) {
 	    }
 
 	    vlAbort();
+	}
+	else if (isError(s_errorCode, s_errorSuppressed)) {
+	    // We don't dump tree on any error because a Visitor may be in middle of
+	    // a tree cleanup and cause a false broken problem.
+	    if (s_errorExitCb) s_errorExitCb();
 	}
     }
 }

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -75,7 +75,7 @@ public:
 void LinkCellsGraph::loopsMessageCb(V3GraphVertex* vertexp) {
     if (LinkCellsVertex* vvertexp = dynamic_cast<LinkCellsVertex*>(vertexp)) {
 	vvertexp->modp()->v3error("Recursive module (module instantiates itself): "
-				  <<vvertexp->modp()->name());
+				  <<vvertexp->modp()->prettyName());
 	V3Error::abortIfErrors();
     } else {  // Everything should match above, but...
 	v3fatalSrc("Recursive instantiations");
@@ -90,6 +90,7 @@ private:
     // NODE STATE
     //  Entire netlist:
     //   AstNodeModule::user1p()	// V3GraphVertex*    Vertex describing this module
+    //   AstCell::user1()		// bool			Did it.
     //  Allocated across all readFiles in V3Global::readFiles:
     //   AstNode::user4p()	// VSymEnt*    Package and typedef symbol names
     AstUser1InUse	m_inuser1;
@@ -119,6 +120,28 @@ private:
 	    nodep->user1p(new LinkCellsVertex(&m_graph, nodep));
 	}
 	return (nodep->user1p()->castGraphVertex());
+    }
+
+    AstNodeModule* resolveModule(AstNode* nodep, const string& modName) {
+	AstNodeModule* modp = m_mods.rootp()->findIdFallback(modName)->nodep()->castNodeModule();
+	if (!modp) {
+	    // Read-subfile
+	    // If file not found, make AstNotFoundModule, rather than error out.
+	    // We'll throw the error when we know the module will really be needed.
+	    string prettyName = AstNode::prettyName(modName);
+	    V3Parse parser (v3Global.rootp(), m_filterp, m_parseSymp);
+	    parser.parseFile(nodep->fileline(), prettyName, false, "");
+	    V3Error::abortIfErrors();
+	    // We've read new modules, grab new pointers to their names
+	    readModNames();
+	    // Check again
+	    modp = m_mods.rootp()->findIdFallback(modName)->nodep()->castNodeModule();
+	    if (!modp) {
+		// This shouldn't throw a message as parseFile will create a AstNotFoundModule for us
+		nodep->v3error("Can't resolve module reference: "<<prettyName);
+	    }
+	}
+	return modp;
     }
 
     // VISITs
@@ -158,7 +181,8 @@ private:
 	m_modp = nodep;
 	UINFO(2,"Link Module: "<<nodep<<endl);
 	if (nodep->fileline()->filebasenameNoExt() != nodep->prettyName()
-	    && !v3Global.opt.isLibraryFile(nodep->fileline()->filename())) {
+	    && !v3Global.opt.isLibraryFile(nodep->fileline()->filename())
+	    && !nodep->internal()) {
 	    // We only complain once per file, otherwise library-like files have a huge mess of warnings
 	    if (m_declfnWarned.find(nodep->fileline()->filename()) == m_declfnWarned.end()) {
 		m_declfnWarned.insert(nodep->fileline()->filename());
@@ -166,7 +190,8 @@ private:
 			      <<"' does not match "<<nodep->typeName()<<" name: "<<nodep->prettyName());
 	    }
 	}
-	bool topMatch = (v3Global.opt.topModule()==nodep->name());
+	if (nodep->castIface() || nodep->castPackage()) nodep->inLibrary(true); // Interfaces can't be at top, unless asked
+	bool topMatch = (v3Global.opt.topModule()==nodep->prettyName());
 	if (topMatch) {
 	    m_topVertexp = vertex(nodep);
 	    UINFO(2,"Link --top-module: "<<nodep<<endl);
@@ -180,9 +205,29 @@ private:
 	    if (!m_libVertexp) m_libVertexp = new LibraryVertex(&m_graph);
 	    new V3GraphEdge(&m_graph, m_libVertexp, vertex(nodep), 1, false);
 	}
+	// Note AstBind also has iteration on cells
 	nodep->iterateChildren(*this);
 	nodep->checkTree();
 	m_modp = NULL;
+    }
+
+    virtual void visit(AstIfaceRefDType* nodep, AstNUser*) {
+	// Cell: Resolve its filename.  If necessary, parse it.
+	UINFO(4,"Link IfaceRef: "<<nodep<<endl);
+	// Use findIdUpward instead of findIdFlat; it doesn't matter for now
+	// but we might support modules-under-modules someday.
+	AstNodeModule* modp = resolveModule(nodep, nodep->ifaceName());
+	if (modp) {
+	    if (modp->castIface()) {
+		// Track module depths, so can sort list from parent down to children
+		new V3GraphEdge(&m_graph, vertex(m_modp), vertex(modp), 1, false);
+		if (!nodep->cellp()) nodep->ifacep(modp->castIface());
+	    } else if (modp->castNotFoundModule()) {  // Will error out later
+	    } else {
+		nodep->v3error("Non-interface used as an interface: "<<nodep->prettyName());
+	    }
+	}
+	// Note cannot do modport resolution here; modports are allowed underneath generates
     }
 
     virtual void visit(AstPackageImport* nodep, AstNUser*) {
@@ -192,28 +237,35 @@ private:
 	new V3GraphEdge(&m_graph, vertex(m_modp), vertex(nodep->packagep()), 1, false);
     }
 
+    virtual void visit(AstBind* nodep, AstNUser*) {
+	// Bind: Has cells underneath that need to be put into the new module, and cells which need resolution
+	// TODO this doesn't allow bind to dotted hier names, that would require
+	// this move to post param, which would mean we do not auto-read modules
+	// and means we cannot compute module levels until later.
+	UINFO(4,"Link Bind: "<<nodep<<endl);
+	AstNodeModule* modp = resolveModule(nodep,nodep->name());
+	if (modp) {
+	    AstNode* cellsp = nodep->cellsp()->unlinkFrBackWithNext();
+	    // Module may have already linked, so need to pick up these new cells
+	    AstNodeModule* oldModp = m_modp;
+	    {
+		m_modp = modp;
+		modp->addStmtp(cellsp);  // Important that this adds to end, as next iterate assumes does all cells
+		cellsp->iterateAndNext(*this);
+	    }
+	    m_modp = oldModp;
+	}
+	pushDeletep(nodep->unlinkFrBack());
+    }
+
     virtual void visit(AstCell* nodep, AstNUser*) {
 	// Cell: Resolve its filename.  If necessary, parse it.
+	if (nodep->user1SetOnce()) return;  // AstBind and AstNodeModule may call a cell twice
 	if (!nodep->modp()) {
 	    UINFO(4,"Link Cell: "<<nodep<<endl);
 	    // Use findIdFallback instead of findIdFlat; it doesn't matter for now
 	    // but we might support modules-under-modules someday.
-	    AstNodeModule* modp = m_mods.rootp()->findIdFallback(nodep->modName())->nodep()->castNodeModule();
-	    if (!modp) {
-		// Read-subfile
-		// If file not found, make AstNotFoundModule, rather than error out.
-		// We'll throw the error when we know the module will really be needed.
-		V3Parse parser (v3Global.rootp(), m_filterp, m_parseSymp);
-		parser.parseFile(nodep->fileline(), nodep->modName(), false, "");
-		V3Error::abortIfErrors();
-		// We've read new modules, grab new pointers to their names
-		readModNames();
-		// Check again
-		modp = m_mods.rootp()->findIdFallback(nodep->modName())->nodep()->castNodeModule();
-		if (!modp) {
-		    nodep->v3error("Can't resolve module reference: "<<nodep->modName());
-		}
-	    }
+	    AstNodeModule* modp = resolveModule(nodep,nodep->modName());
 	    if (modp) {
 		nodep->modp(modp);
 		// Track module depths, so can sort list from parent down to children
@@ -280,6 +332,23 @@ private:
 			}
 		    }
 		}
+	    }
+	}
+	if (nodep->modp()->castIface()) {
+	    // Cell really is the parent's instantiation of an interface, not a normal module
+	    // Make sure we have a variable to refer to this cell, so can <ifacename>.<innermember>
+	    // in the same way that a child does.  Rename though to avoid conflict with cell.
+	    // This is quite similar to how classes work; when unpacked classes are better supported
+	    // may remap interfaces to be more like a class.
+	    if (!nodep->hasIfaceVar()) {
+		string varName = nodep->name()+"__Viftop";  // V3LinkDot looks for this naming
+		AstIfaceRefDType* idtypep = new AstIfaceRefDType(nodep->fileline(), nodep->name(), nodep->modp()->name());
+		idtypep->cellp(nodep);  // Only set when real parent cell known
+		idtypep->ifacep(NULL);  // cellp overrides
+		AstVar* varp = new AstVar(nodep->fileline(), AstVarType::IFACEREF, varName, VFlagChildDType(), idtypep);
+		varp->isIfaceParent(true);
+		nodep->addNextHere(varp);
+		nodep->hasIfaceVar(true);
 	    }
 	}
 	if (nodep->modp()) {

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -35,8 +35,22 @@
 // Special methods
 
 // We need these here, because the classes they point to aren't defined when we declare the class
-bool AstNodeVarRef::broken() const { return ((m_varScopep && !m_varScopep->brokeExists())
-					     || (m_varp && !m_varp->brokeExists())); }
+const char* AstIfaceRefDType::broken() const {
+    BROKEN_RTN(m_ifacep && !m_ifacep->brokeExists());
+    BROKEN_RTN(m_cellp && !m_cellp->brokeExists());
+    BROKEN_RTN(m_modportp && !m_modportp->brokeExists());
+    return NULL;
+}
+
+AstIface* AstIfaceRefDType::ifaceViaCellp() const {
+    return ((m_cellp && m_cellp->modp()) ? m_cellp->modp()->castIface() : m_ifacep);
+}
+
+const char* AstNodeVarRef::broken() const {
+    BROKEN_RTN(m_varScopep && !m_varScopep->brokeExists());
+    BROKEN_RTN(m_varp && !m_varp->brokeExists());
+    return NULL;
+}
 
 void AstNodeVarRef::cloneRelink() {
     if (m_varp && m_varp->clonep()) { m_varp = m_varp->clonep()->castVar(); }
@@ -54,18 +68,18 @@ void AstNodeClassDType::repairMemberCache() {
     }
 }
 
-bool AstNodeClassDType::broken() const {
+const char* AstNodeClassDType::broken() const {
     set<AstMemberDType*> exists;
     for (AstMemberDType* itemp = membersp(); itemp; itemp=itemp->nextp()->castMemberDType()) {
 	exists.insert(itemp);
     }
     for (MemberNameMap::const_iterator it=m_members.begin(); it!=m_members.end(); ++it) {
-	if (exists.find(it->second) == exists.end()) {
+	if (VL_UNLIKELY(exists.find(it->second) == exists.end())) {
 	    this->v3error("Internal: Structure member broken: "<<it->first);
-	    return true;
+	    return "member broken";
 	}
     }
-    return false;
+    return NULL;
 }
 
 int AstBasicDType::widthAlignBytes() const {
@@ -103,11 +117,19 @@ bool AstVar::isSigPublic() const {
 }
 
 bool AstVar::isScQuad() const {
-    return (isSc() && isQuad() && !isScBv());
+    return (isSc() && isQuad() && !isScBv() && !isScBigUint());
 }
 
 bool AstVar::isScBv() const {
     return ((isSc() && width() >= v3Global.opt.pinsBv()) || m_attrScBv);
+}
+
+bool AstVar::isScUint() const {
+    return ((isSc() && v3Global.opt.pinsScUint() && width() >= 2 && width() <= 64) && !isScBv());
+}
+
+bool AstVar::isScBigUint() const {
+    return ((isSc() && v3Global.opt.pinsScBigUint() && width() >= 65 && width() <= 512) && !isScBv());
 }
 
 void AstVar::combineType(AstVarType type) {
@@ -278,7 +300,11 @@ string AstVar::dpiArgType(bool named, bool forReturn) const {
 }
 
 string AstVar::scType() const {
-    if (isScBv()) {
+    if (isScBigUint()) {
+	return (string("sc_biguint<")+cvtToStr(widthMin())+"> ");  // Keep the space so don't get >>
+    } else if (isScUint()) {
+	return (string("sc_uint<")+cvtToStr(widthMin())+"> ");  // Keep the space so don't get >>
+    } else if (isScBv()) {
 	return (string("sc_bv<")+cvtToStr(widthMin())+"> ");  // Keep the space so don't get >>
     } else if (widthMin() == 1) {
 	return "bool";
@@ -307,10 +333,12 @@ AstNodeDType* AstNodeDType::dtypeDimensionp(int dimension) {
     //	   DECL:	VAR a (ARRAYSEL0 (ARRAYSEL1 (ARRAYSEL2 (DT RANGE3))))
     //	      *or*	VAR a (ARRAYSEL0 (ARRAYSEL1 (ARRAYSEL2 (ARRAYSEL3 (DT))))
     //	   SEL1 needs to select from entire variable which is a pointer to ARRAYSEL0
+    // TODO this function should be removed in favor of recursing the dtype(),
+    // as that allows for more complicated data types.
     int dim = 0;
     for (AstNodeDType* dtypep=this; dtypep; ) {
 	dtypep = dtypep->skipRefp();  // Skip AstRefDType/AstTypedef, or return same node
-	if (AstArrayDType* adtypep = dtypep->castArrayDType()) {
+	if (AstNodeArrayDType* adtypep = dtypep->castNodeArrayDType()) {
 	    if ((dim++)==dimension) {
 		return dtypep;
 	    }
@@ -340,11 +368,11 @@ AstNodeDType* AstNodeDType::dtypeDimensionp(int dimension) {
     return NULL;
 }
 
-uint32_t AstNodeDType::arrayElements() {
+uint32_t AstNodeDType::arrayUnpackedElements() {
     uint32_t entries=1;
     for (AstNodeDType* dtypep=this; dtypep; ) {
 	dtypep = dtypep->skipRefp();  // Skip AstRefDType/AstTypedef, or return same node
-	if (AstArrayDType* adtypep = dtypep->castArrayDType()) {
+	if (AstUnpackArrayDType* adtypep = dtypep->castUnpackArrayDType()) {
 	    entries *= adtypep->elementsConst();
 	    dtypep = adtypep->subDTypep();
 	}
@@ -356,21 +384,22 @@ uint32_t AstNodeDType::arrayElements() {
     return entries;
 }
 
-pair<uint32_t,uint32_t> AstNodeDType::dimensions() {
+pair<uint32_t,uint32_t> AstNodeDType::dimensions(bool includeBasic) {
     // How many array dimensions (packed,unpacked) does this Var have?
     uint32_t packed = 0;
     uint32_t unpacked = 0;
     for (AstNodeDType* dtypep=this; dtypep; ) {
 	dtypep = dtypep->skipRefp();  // Skip AstRefDType/AstTypedef, or return same node
-	if (AstArrayDType* adtypep = dtypep->castArrayDType()) {
-	    if (adtypep->isPacked()) packed += 1;
-	    else unpacked += 1;
+	if (AstNodeArrayDType* adtypep = dtypep->castNodeArrayDType()) {
+	    if (adtypep->castPackArrayDType()) packed++;
+	    else unpacked++;
 	    dtypep = adtypep->subDTypep();
+	    continue;
 	}
-	else {
-	    // AstBasicDType - nothing below, 1
-	    break;
+	else if (AstBasicDType* adtypep = dtypep->castBasicDType()) {
+	    if (includeBasic && adtypep->isRanged()) packed++;
 	}
+	break;
     }
     return make_pair(packed, unpacked);
 }
@@ -384,26 +413,12 @@ int AstNodeDType::widthPow2() const {
     return 1;
 }
 
-// Special operators
-int AstArraySel::dimension(AstNode* nodep) {
-    // How many dimensions is this reference from the base variable?
-    // nodep is typically the fromp() of a select; thus the first select
-    // is selecting from the entire variable type - effectively dimension 0.
-    // Dimension passed to AstVar::dtypeDimensionp; see comments there
-    int dim = 0;
-    while (nodep) {
-	if (nodep->castNodeSel()) { dim++; nodep=nodep->castNodeSel()->fromp(); continue; }
-	if (nodep->castNodePreSel()) { dim++; nodep=nodep->castNodePreSel()->fromp(); continue; }
-	break;
-    }
-    return dim;
-}
 AstNode* AstArraySel::baseFromp(AstNode* nodep) {	///< What is the base variable (or const) this dereferences?
     // Else AstArraySel etc; search for the base
     while (nodep) {
 	if (nodep->castArraySel()) { nodep=nodep->castArraySel()->fromp(); continue; }
 	else if (nodep->castSel()) { nodep=nodep->castSel()->fromp(); continue; }
-	// AstNodeSelPre stashes the associated variable under a ATTROF of AstAttrType::VAR_BASE/MEMBER_BASE so it isn't constified
+	// AstNodeSelPre stashes the associated variable under an ATTROF of AstAttrType::VAR_BASE/MEMBER_BASE so it isn't constified
 	else if (nodep->castAttrOf()) { nodep=nodep->castAttrOf()->fromp(); continue; }
 	else if (nodep->castNodePreSel()) {
 	    if (nodep->castNodePreSel()->attrp()) {
@@ -418,10 +433,12 @@ AstNode* AstArraySel::baseFromp(AstNode* nodep) {	///< What is the base variable
     return nodep;
 }
 
-bool AstScope::broken() const {
-    return ((m_aboveScopep && !m_aboveScopep->brokeExists())
-	    || (m_aboveCellp && !m_aboveCellp->brokeExists())
-	    || !m_modp || !m_modp->brokeExists());
+const char* AstScope::broken() const {
+    BROKEN_RTN(m_aboveScopep && !m_aboveScopep->brokeExists());
+    BROKEN_RTN(m_aboveCellp && !m_aboveCellp->brokeExists());
+    BROKEN_RTN(!m_modp);
+    BROKEN_RTN(m_modp && !m_modp->brokeExists());
+    return NULL;
 }
 
 void AstScope::cloneRelink() {
@@ -555,7 +572,7 @@ AstBasicDType* AstTypeTable::findLogicBitDType(FileLine* fl, AstBasicDTypeKwd kw
     LogicMap::const_iterator it = mapr.find(widths);
     if (it != mapr.end()) return it->second;
     //
-    AstBasicDType* new1p = new AstBasicDType(fl, AstBasicDTypeKwd::BIT, numeric, width, widthMin);
+    AstBasicDType* new1p = new AstBasicDType(fl, kwd, numeric, width, widthMin);
     // Because the detailed map doesn't update this map,
     // check the detailed map for this same node, and if found update this map
     // Also adds this new node to the detailed map
@@ -564,6 +581,15 @@ AstBasicDType* AstTypeTable::findLogicBitDType(FileLine* fl, AstBasicDTypeKwd kw
     else addTypesp(newp);
     //
     mapr.insert(make_pair(widths,newp));
+    return newp;
+}
+
+AstBasicDType* AstTypeTable::findLogicBitDType(FileLine* fl, AstBasicDTypeKwd kwd,
+					       VNumRange range, int widthMin, AstNumeric numeric) {
+    AstBasicDType* new1p = new AstBasicDType(fl, kwd, numeric, range, widthMin);
+    AstBasicDType* newp = findInsertSameDType(new1p);
+    if (newp != new1p) new1p->deleteTree();
+    else addTypesp(newp);
     return newp;
 }
 
@@ -667,10 +693,11 @@ void AstNode::dump(ostream& str) {
     if (name()!="") str<<"  "<<AstNode::quoteName(name());
 }
 
-void AstArrayDType::dump(ostream& str) {
-    this->AstNodeDType::dump(str);
-    if (isPacked()) str<<" [PACKED]";
+void AstAlways::dump(ostream& str) {
+    this->AstNode::dump(str);
+    if (keyword() != VAlwaysKwd::ALWAYS) str<<" ["<<keyword().ascii()<<"]";
 }
+
 void AstArraySel::dump(ostream& str) {
     this->AstNode::dump(str);
     str<<" [start:"<<start()<<"] [length:"<<length()<<"]";
@@ -701,17 +728,36 @@ void AstDisplay::dump(ostream& str) {
     this->AstNode::dump(str);
     //str<<" "<<displayType().ascii();
 }
+void AstEnumItemRef::dump(ostream& str) {
+    this->AstNode::dump(str);
+    str<<" -> ";
+    if (itemp()) { itemp()->dump(str); }
+    else { str<<"UNLINKED"; }
+}
+void AstIfaceRefDType::dump(ostream& str) {
+    this->AstNode::dump(str);
+    if (cellName()!="") { str<<" cell="<<cellName(); }
+    if (ifaceName()!="") { str<<" if="<<ifaceName(); }
+    if (modportName()!="") { str<<" mp="<<modportName(); }
+    if (cellp()) { str<<" -> "; cellp()->dump(str); }
+    else if (ifacep()) { str<<" -> "; ifacep()->dump(str); }
+    else { str<<" -> UNLINKED"; }
+}
+void AstIfaceRefDType::dumpSmall(ostream& str) {
+    this->AstNodeDType::dumpSmall(str);
+    str<<"iface";
+}
 void AstJumpGo::dump(ostream& str) {
     this->AstNode::dump(str);
     str<<" -> ";
     if (labelp()) { labelp()->dump(str); }
     else { str<<"%Error:UNLINKED"; }
 }
-void AstEnumItemRef::dump(ostream& str) {
+void AstModportVarRef::dump(ostream& str) {
     this->AstNode::dump(str);
-    str<<" -> ";
-    if (itemp()) { itemp()->dump(str); }
-    else { str<<"UNLINKED"; }
+    str<<" "<<varType();
+    if (varp()) { str<<" -> "; varp()->dump(str); }
+    else { str<<" -> UNLINKED"; }
 }
 void AstPin::dump(ostream& str) {
     this->AstNode::dump(str);
@@ -750,6 +796,15 @@ void AstNodeDType::dumpSmall(ostream& str) {
     if (!widthSized()) str<<"/"<<widthMin();
     str<<")";
 }
+void AstNodeArrayDType::dumpSmall(ostream& str) {
+    this->AstNodeDType::dumpSmall(str);
+    if (castPackArrayDType()) str<<"p"; else str<<"u";
+    str<<"["<<declRange().left()<<":"<<declRange().right()<<"]";
+}
+void AstNodeArrayDType::dump(ostream& str) {
+    this->AstNodeDType::dump(str);
+    str<<" ["<<declRange().left()<<":"<<declRange().right()<<"]";
+}
 void AstNodeModule::dump(ostream& str) {
     this->AstNode::dump(str);
     str<<"  L"<<level();
@@ -760,6 +815,13 @@ void AstNodeModule::dump(ostream& str) {
 void AstPackageImport::dump(ostream& str) {
     this->AstNode::dump(str);
     str<<" -> "<<packagep();
+}
+void AstSel::dump(ostream& str) {
+    this->AstNode::dump(str);
+    if (declRange().ranged()) {
+	str<<" decl["<<declRange().left()<<":"<<declRange().right()<<"]";
+	if (declElWidth()!=1) str<<"/"<<declElWidth();
+    }
 }
 void AstTypeTable::dump(ostream& str) {
     this->AstNode::dump(str);
@@ -812,7 +874,7 @@ void AstVarXRef::dump(ostream& str) {
     if (lvalue()) str<<" [LV] => ";
     else          str<<" [RV] <- ";
     str<<dotted()<<". - ";
-    if (inlinedDots()!="") str<<" flat.="<<inlinedDots()<<" - ";
+    if (inlinedDots()!="") str<<" inline.="<<inlinedDots()<<" - ";
     if (varScopep()) { varScopep()->dump(str); }
     else if (varp()) { varp()->dump(str); }
     else { str<<"UNLINKED"; }
@@ -859,11 +921,16 @@ void AstSenItem::dump(ostream& str) {
 void AstParseRef::dump(ostream& str) {
     this->AstNode::dump(str);
     str<<" ["<<expect().ascii()<<"]";
-    if (start()) str<<" [START]";
+}
+void AstPackageRef::dump(ostream& str) {
+    this->AstNode::dump(str);
+    if (packagep()) { str<<" pkg="<<(void*)packagep(); }
+    str<<" -> ";
+    if (packagep()) { packagep()->dump(str); }
+    else { str<<"UNLINKED"; }
 }
 void AstDot::dump(ostream& str) {
     this->AstNode::dump(str);
-    if (start()) str<<" [START]";
 }
 void AstActive::dump(ostream& str) {
     this->AstNode::dump(str);

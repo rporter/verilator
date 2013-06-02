@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -86,16 +86,17 @@ private:
 #endif
 	AstVar* varp = vscp->varp();
 	vscp->v3warn(IMPERFECTSCH,"Imperfect scheduling of variable: "<<vscp);
-	AstArrayDType* arrayp = varp->dtypeSkipRefp()->castArrayDType();
+	AstUnpackArrayDType* arrayp = varp->dtypeSkipRefp()->castUnpackArrayDType();
+	AstStructDType *structp = varp->dtypeSkipRefp()->castStructDType();
 	bool isArray = arrayp;
-	int msb = isArray ? arrayp->msb() : 0;
-	int lsb = isArray ? arrayp->lsb() : 0;
-	if (isArray && ((msb - lsb + 1) > DETECTARRAY_MAX_INDEXES)) {
+	bool isStruct = structp && structp->packed();
+	int elements = isArray ? arrayp->elementsConst() : 1;
+	if (isArray && (elements > DETECTARRAY_MAX_INDEXES)) {
 	    vscp->v3warn(E_DETECTARRAY, "Unsupported: Can't detect more than "<<cvtToStr(DETECTARRAY_MAX_INDEXES)
 			 <<" array indexes (probably with UNOPTFLAT warning suppressed): "<<varp->prettyName()<<endl
 			 <<vscp->warnMore()
-			 <<"... Could recompile with DETECTARRAY_MAX_INDEXES increased to at least "<<cvtToStr(msb-lsb+1));
-	} else if (!isArray
+			 <<"... Could recompile with DETECTARRAY_MAX_INDEXES increased to at least "<<cvtToStr(elements));
+	} else if (!isArray && !isStruct
 		   && !varp->dtypeSkipRefp()->castBasicDType()) {
 	    if (debug()) varp->dumpTree(cout,"-DETECTARRAY-");
 	    vscp->v3warn(E_DETECTARRAY, "Unsupported: Can't detect changes on complex variable (probably with UNOPTFLAT warning suppressed): "<<varp->prettyName());
@@ -109,7 +110,7 @@ private:
 	    m_topModp->addStmtp(newvarp);
 	    AstVarScope* newvscp = new AstVarScope(vscp->fileline(), m_scopetopp, newvarp);
 	    m_scopetopp->addVarp(newvscp);
-	    for (int index=lsb; index<=msb; ++index) {
+	    for (int index=0; index<elements; ++index) {
 		AstChangeDet* changep
 		    = new AstChangeDet (vscp->fileline(),
 					aselIfNeeded(isArray, index,

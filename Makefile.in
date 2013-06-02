@@ -9,7 +9,7 @@
 #
 #*****************************************************************************
 #
-# Copyright 2003-2012 by Wilson Snyder. This program is free software; you can
+# Copyright 2003-2013 by Wilson Snyder. This program is free software; you can
 # redistribute it and/or modify it under the terms of either the GNU
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
@@ -121,6 +121,7 @@ DISTFILES_INC = $(INFOS) .gitignore Artistic COPYING COPYING.LESSER \
 	include/vltstd/*.[chv]* \
 	.*attributes */.*attributes  */*/.*attributes \
 	src/.*ignore src/*.in src/*.cpp src/*.[chly] src/astgen src/bisonpre src/*fix \
+	src/.gdbinit \
 	src/*.pl src/*.pod \
 	test_*/.*ignore test_*/Makefile* test_*/*.cpp \
 	test_*/*.pl test_*/*.v test_*/*.vc test_*/*.vh \
@@ -398,14 +399,17 @@ endif
 # VERILATOR_AUTHOR_SITE
 endif
 
+# Use --xml flag to see the cppcheck code to use for suppression
 CPPCHECK = cppcheck
-CPPCHECK_FLAGS = --enable=all --inline-suppr --suppress=unusedScopedObject
+CPPCHECK_FLAGS = --enable=all --inline-suppr --suppress=unusedScopedObject --suppress=cstyleCast
+CPPCHECK_FLAGS += --xml
 CPPCHECK_CPP = $(wildcard $(srcdir)/include/*.cpp $(srcdir)/src/*.cpp)
 CPPCHECK_DEP = $(subst .cpp,.cppcheck,$(CPPCHECK_CPP))
+CPPCHECK_INC = -I$(srcdir)/include -I$(srcdir)/src/obj_dbg -I$(srcdir)/src
 
 cppcheck: $(CPPCHECK_DEP)
 %.cppcheck: %.cpp
-	$(CPPCHECK) $(CPPCHECK_FLAGS) -DVL_DEBUG=1 -I$(srcdir)/include -I$(srcdir)/src $<
+	$(CPPCHECK) $(CPPCHECK_FLAGS) -DVL_DEBUG=1 $(CPPCHECK_INC) $<
 
 ftp: info
 
@@ -455,7 +459,7 @@ clean mostlyclean distclean maintainer-clean::
 
 distclean maintainer-clean::
 	rm -f Makefile config.status config.cache config.log verilator_bin* TAGS
-	rm -f include/verilated.mk
+	rm -f include/verilated.mk include/verilated_config.h
 
 TAGFILES=${srcdir}/*/*.cpp ${srcdir}/*/*.h ${srcdir}/*/*.in \
 	${srcdir}/*.in ${srcdir}/*.pod

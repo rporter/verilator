@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -232,6 +232,26 @@ public:
     ~OrderUser() {}
 };
 
+
+//######################################################################
+// Comparator classes
+
+//! Comparator for width of associated variable
+struct OrderVarWidthCmp {
+    bool operator() (OrderVarStdVertex* vsv1p, OrderVarStdVertex* vsv2p) {
+	return vsv1p->varScp()->varp()->width()
+	    > vsv2p->varScp()->varp()->width();
+    }
+};
+
+//! Comparator for fanout of vertex
+struct OrderVarFanoutCmp {
+    bool operator() (OrderVarStdVertex* vsv1p, OrderVarStdVertex* vsv2p) {
+	return vsv1p->fanout() > vsv2p->fanout();
+    }
+};
+
+
 //######################################################################
 // Order class functions
 
@@ -285,6 +305,7 @@ private:
 protected:
     friend class OrderMoveDomScope;
     V3List<OrderMoveDomScope*>  m_pomReadyDomScope;	// List of ready domain/scope pairs, by loopId
+    vector<OrderVarStdVertex*>	m_unoptflatVars;	// Vector of variables in UNOPTFLAT loop
 
 private:
     // STATS
@@ -354,8 +375,10 @@ private:
     void processBrokeLoop();
 #endif
     void processCircular();
+    typedef deque<OrderEitherVertex*> VertexVec;
     void processInputs();
-    void processInputsIterate(OrderEitherVertex* vertexp);
+    void processInputsInIterate(OrderEitherVertex* vertexp, VertexVec& todoVec);
+    void processInputsOutIterate(OrderEitherVertex* vertexp, VertexVec& todoVec);
     void processSensitive();
     void processDomains();
     void processDomainsIterate(OrderEitherVertex* vertexp);
@@ -418,10 +441,99 @@ private:
 		if (tempWeight) edgep->weight(1);  // Else the below loop detect can't see the loop
 		m_graph.reportLoops(&OrderEdge::followComboConnected, vertexp); // calls OrderGraph::loopsVertexCb
 		if (tempWeight) edgep->weight(0);
+		if (v3Global.opt.reportUnoptflat()) {
+		    // Report candidate variables for splitting
+		    reportLoopVars(vertexp);
+		    // Do a subgraph for the UNOPTFLAT loop
+		    OrderGraph loopGraph;
+		    m_graph.subtreeLoops(&OrderEdge::followComboConnected,
+					 vertexp, &loopGraph);
+		    loopGraph.dumpDotFilePrefixedAlways("unoptflat");
+		}
 	    }
 	}
     }
 
+    //! Find all variables in an UNOPTFLAT loop
+    //!
+    //! Ignore vars that are 1-bit wide and don't worry about generated
+    //! variables (PRE and POST vars, __Vdly__, __Vcellin__ and __VCellout).
+    //! What remains are candidates for splitting to break loops.
+    //!
+    //! node->user3 is used to mark if we have done a particular variable.
+    //! vertex->user is used to mark if we have seen this vertex before.
+    //!
+    //! @todo We could be cleverer in the future and consider just
+    //!       the width that is generated/consumed.
+    void reportLoopVars(OrderVarVertex* vertexp) {
+	m_graph.userClearVertices();
+	AstNode::user3ClearTree();
+	m_unoptflatVars.clear();
+	reportLoopVarsIterate (vertexp, vertexp->color());
+	AstNode::user3ClearTree();
+	m_graph.userClearVertices();
+	// May be very large vector, so only report the "most important"
+	// elements. Up to 10 of the widest
+	cerr<<V3Error::msgPrefix()
+	    <<"     Widest candidate vars to split:"<<endl;
+	std::stable_sort (m_unoptflatVars.begin(), m_unoptflatVars.end(), OrderVarWidthCmp());
+	int lim = m_unoptflatVars.size() < 10 ? m_unoptflatVars.size() : 10;
+	for (int i = 0; i < lim; i++) {
+	    OrderVarStdVertex* vsvertexp = m_unoptflatVars[i];
+	    AstVar* varp = vsvertexp->varScp()->varp();
+	    cerr<<V3Error::msgPrefix()<<"          "
+		<<varp->fileline()<<" "<<varp->prettyName()<<dec
+		<<", width "<<varp->width()<<", fanout "
+		<<vsvertexp->fanout()<<endl;
+	}
+	// Up to 10 of the most fanned out
+	cerr<<V3Error::msgPrefix()
+	    <<"     Most fanned out candidate vars to split:"<<endl;
+	std::stable_sort (m_unoptflatVars.begin(), m_unoptflatVars.end(),
+			  OrderVarFanoutCmp());
+	lim = m_unoptflatVars.size() < 10 ? m_unoptflatVars.size() : 10;
+	for (int i = 0; i < lim; i++) {
+	    OrderVarStdVertex* vsvertexp = m_unoptflatVars[i];
+	    AstVar* varp = vsvertexp->varScp()->varp();
+	    cerr<<V3Error::msgPrefix()<<"          "
+		<<varp->fileline()<<" "<<varp->prettyName()
+		<<", width "<<dec<<varp->width()
+		<<", fanout "<<vsvertexp->fanout()<<endl;
+	}
+	m_unoptflatVars.clear();
+    }
+
+    void reportLoopVarsIterate(V3GraphVertex* vertexp, uint32_t color) {
+	if (vertexp->user()) return; // Already done
+	vertexp->user(1);
+	if (OrderVarStdVertex* vsvertexp = dynamic_cast<OrderVarStdVertex*>(vertexp)) {
+	    // Only reporting on standard variable vertices
+	    AstVar* varp = vsvertexp->varScp()->varp();
+	    if (!varp->user3()) {
+		string name = varp->prettyName();
+		if ((varp->width() != 1)
+		    && (name.find("__Vdly") == string::npos)
+		    && (name.find("__Vcell") == string::npos)) {
+		    // Variable to report on and not yet done
+		    m_unoptflatVars.push_back(vsvertexp);
+		}
+		varp->user3Inc();
+	    }
+	}
+	// Iterate through all the to and from vertices of the same color
+	for (V3GraphEdge* edgep = vertexp->outBeginp(); edgep;
+	     edgep = edgep->outNextp()) {
+	    if (edgep->top()->color() == color) {
+		reportLoopVarsIterate(edgep->top(), color);
+	    }
+	}
+	for (V3GraphEdge* edgep = vertexp->inBeginp(); edgep;
+	     edgep = edgep->inNextp()) {
+	    if (edgep->fromp()->color() == color) {
+		reportLoopVarsIterate(edgep->fromp(), color);
+	    }
+	}
+    }
     // VISITORS
     virtual void visit(AstNetlist* nodep, AstNUser*) {
 	{
@@ -949,28 +1061,33 @@ void OrderVisitor::processBrokeLoop() {
 // Clock propagation
 
 void OrderVisitor::processInputs() {
-    m_graph.userClearVertices();  // Vertex::user()   // true if processed
+    m_graph.userClearVertices();  // Vertex::user()   // 1 if input recursed, 2 if marked as input, 3 if out-edges recursed
     // Start at input vertex, process from input-to-output order
+    VertexVec todoVec; // List of newly-input marked vectors we need to process
+    todoVec.push_front(m_inputsVxp);
     m_inputsVxp->isFromInput(true);  // By definition
-    processInputsIterate(m_inputsVxp);
+    while (!todoVec.empty()) {
+	OrderEitherVertex* vertexp = todoVec.back(); todoVec.pop_back();
+	processInputsOutIterate(vertexp, todoVec);
+    }
 }
 
-void OrderVisitor::processInputsIterate(OrderEitherVertex* vertexp) {
+void OrderVisitor::processInputsInIterate(OrderEitherVertex* vertexp, VertexVec& todoVec) {
     // Propagate PrimaryIn through simple assignments
     if (vertexp->user()) return;  // Already processed
     if (0 && debug()>=9) {
-	UINFO(9," InIt "<<vertexp<<endl);
+	UINFO(9," InIIter "<<vertexp<<endl);
 	if (OrderLogicVertex* vvertexp = dynamic_cast<OrderLogicVertex*>(vertexp)) {
 	    vvertexp->nodep()->dumpTree(cout,"-            TT: ");
 	}
     }
-    vertexp->user(true);  // Processing
+    vertexp->user(1);  // Processing
     // First handle all inputs to this vertex, in most cases they'll be already processed earlier
     // Also, determine if this vertex is an input
     int inonly = 1;  // 0=no, 1=maybe, 2=yes until a no
     for (V3GraphEdge* edgep = vertexp->inBeginp(); edgep; edgep=edgep->inNextp()) {
 	OrderEitherVertex* frVertexp = (OrderEitherVertex*)edgep->fromp();
-	processInputsIterate(frVertexp);
+	processInputsInIterate(frVertexp, todoVec);
 	if (frVertexp->isFromInput()) {
 	    if (inonly==1) inonly = 2;
 	} else if (dynamic_cast<OrderVarPostVertex*>(frVertexp)) {
@@ -981,20 +1098,38 @@ void OrderVisitor::processInputsIterate(OrderEitherVertex* vertexp) {
 	    break;
 	}
     }
-    if (inonly == 2) {  // Set it.  Note may have already been set earlier, too
+
+    if (inonly == 2 && vertexp->user()<2) {  // Set it.  Note may have already been set earlier, too
 	UINFO(9,"   Input reassignment: "<<vertexp<<endl);
 	vertexp->isFromInput(true);
+	vertexp->user(2);  // 2 means on list
+	// Can't work on out-edges of a node we know is an input immediately,
+	// as it might visit other nodes before their input state is resolved.
+	// So push to list and work on it later when all in-edges known resolved
+	todoVec.push_back(vertexp);
     }
-    // If we're still an input, process all targets of this vertex
-    if (vertexp->isFromInput()) {
+    //UINFO(9,"  InIdone "<<vertexp<<endl);
+}
+
+void OrderVisitor::processInputsOutIterate(OrderEitherVertex* vertexp, VertexVec& todoVec) {
+    if (vertexp->user()==3) return;  // Already out processed
+    //UINFO(9," InOIter "<<vertexp<<endl);
+    // First make sure input path is fully recursed
+    processInputsInIterate(vertexp, todoVec);
+    // Propagate PrimaryIn through simple assignments
+    if (!vertexp->isFromInput()) v3fatalSrc("processInputsOutIterate only for input marked vertexes");
+    vertexp->user(3);  // out-edges processed
+
+    {
+	// Propagate PrimaryIn through simple assignments, followint target of vertex
 	for (V3GraphEdge* edgep = vertexp->outBeginp(); edgep; edgep=edgep->outNextp()) {
 	    OrderEitherVertex* toVertexp = (OrderEitherVertex*)edgep->top();
 	    if (OrderVarStdVertex* vvertexp = dynamic_cast<OrderVarStdVertex*>(toVertexp)) {
-		processInputsIterate(vvertexp);
+		processInputsInIterate(vvertexp, todoVec);
 	    }
 	    if (OrderLogicVertex* vvertexp = dynamic_cast<OrderLogicVertex*>(toVertexp)) {
 		if (vvertexp->nodep()->castNodeAssign()) {
-		    processInputsIterate(vvertexp);
+		    processInputsInIterate(vvertexp, todoVec);
 		}
 	    }
 	}
@@ -1189,7 +1324,7 @@ void OrderVisitor::processEdgeReport() {
     }
 
     *logp<<"Signals and their clock domains:"<<endl;
-    sort(report.begin(), report.end());
+    stable_sort(report.begin(), report.end());
     for (deque<string>::iterator it=report.begin(); it!=report.end(); ++it) {
 	*logp<<(*it)<<endl;
     }
@@ -1600,7 +1735,10 @@ void OrderVisitor::process() {
     m_graph.acyclic(&V3GraphEdge::followAlwaysTrue);
     m_graph.dumpDotFilePrefixed("orderg_preasn_done", true);
 #else
-    // Break cycles
+    // Break cycles. Each strongly connected subgraph (including cutable
+    // edges) will have its own color, and corresponds to a loop in the
+    // original graph. However the new graph will be acyclic (the removed
+    // edges are actually still there, just with weight 0).
     UINFO(2,"  Acyclic & Order...\n");
     m_graph.acyclic(&V3GraphEdge::followAlwaysTrue);
     m_graph.dumpDotFilePrefixed("orderg_acyc");
@@ -1611,6 +1749,9 @@ void OrderVisitor::process() {
     m_graph.order();
     m_graph.dumpDotFilePrefixed("orderg_order");
 
+    // This finds everything that can be traced from an input (which by
+    // definition are the source clocks). After this any vertex which was
+    // traced has isFromInput() true.
     UINFO(2,"  Process Clocks...\n");
     processInputs();  // must be before processCircular
 

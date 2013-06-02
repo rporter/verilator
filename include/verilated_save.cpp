@@ -3,7 +3,7 @@
 //
 // THIS MODULE IS PUBLICLY LICENSED
 //
-// Copyright 2001-2012 by Wilson Snyder.  This program is free software;
+// Copyright 2001-2013 by Wilson Snyder.  This program is free software;
 // you can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License Version 2.0.
 //
@@ -116,6 +116,7 @@ void VerilatedSave::open (const char* filenamep) {
     if (filenamep[0]=='|') {
 	assert(0);	// Not supported yet.
     } else {
+	// cppcheck-suppress duplicateExpression
 	m_fd = ::open (filenamep, O_CREAT|O_WRONLY|O_TRUNC|O_LARGEFILE|O_NONBLOCK
 		       , 0666);
 	if (m_fd<0) {
@@ -137,6 +138,7 @@ void VerilatedRestore::open (const char* filenamep) {
     if (filenamep[0]=='|') {
 	assert(0);	// Not supported yet.
     } else {
+	// cppcheck-suppress duplicateExpression
 	m_fd = ::open (filenamep, O_CREAT|O_RDONLY|O_LARGEFILE
 		       , 0666);
 	if (m_fd<0) {

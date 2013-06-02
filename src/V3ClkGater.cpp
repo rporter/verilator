@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2008-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2008-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -684,6 +684,7 @@ class GaterVisitor : public GaterBaseVisitor {
 	AstNode* bodyp = nodep->bodysp()->cloneTree(true);
 
 	AstAlways* alwp = new AstAlways(nodep->fileline(),
+					nodep->keyword(),
 					sensesp,
 					bodyp);
 

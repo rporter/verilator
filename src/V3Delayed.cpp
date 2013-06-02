@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -124,10 +124,10 @@ private:
 	AstVar* varp;
 	AstNodeModule* addmodp = oldvarscp->scopep()->modp();
 	// We need a new AstVar, but only one for all scopes, to match the new AstVarScope
-	VarMap::iterator iter = m_modVarMap.find(make_pair(addmodp,name));
-	if (iter != m_modVarMap.end()) {
+	VarMap::iterator it = m_modVarMap.find(make_pair(addmodp,name));
+	if (it != m_modVarMap.end()) {
 	    // Created module's AstVar earlier under some other scope
-	    varp = iter->second;
+	    varp = it->second;
 	} else {
 	    if (width==0) {
 		varp = new AstVar (oldvarscp->fileline(), AstVarType::BLOCKTEMP, name, oldvarscp->varp());

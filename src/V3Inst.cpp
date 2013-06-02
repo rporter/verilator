@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -105,6 +105,13 @@ private:
 		     exprp);
 		m_modp->addStmtp(assp);
 		if (debug()>=9) assp->dumpTree(cout,"     _new: ");
+	    } else if (nodep->modVarp()->isIfaceRef()) {
+		// Create an AstAssignVarScope for Vars to Cells so we can link with their scope later
+		AstNode* lhsp = new AstVarXRef (exprp->fileline(), nodep->modVarp(), m_cellp->name(), false);
+		AstVarRef* refp = exprp->castVarRef();
+		if (!refp) exprp->v3fatalSrc("Interfaces: Pin is not connected to a VarRef");
+		AstAssignVarScope* assp = new AstAssignVarScope(exprp->fileline(), lhsp, refp);
+		m_modp->addStmtp(assp);
 	    } else {
 		nodep->v3error("Assigned pin is neither input nor output");
 	    }
@@ -198,6 +205,7 @@ private:
 		AstNode* exprp = nodep->exprp()->unlinkFrBack();
 		bool inputPin = nodep->modVarp()->isInput();
 		if (!inputPin && !exprp->castVarRef()
+		    && !exprp->castConcat()  // V3Const will collapse the SEL with the one we're about to make
 		    && !exprp->castSel()) {  // V3Const will collapse the SEL with the one we're about to make
 		    nodep->v3error("Unsupported: Per-bit array instantiations with output connections to non-wires.");
 		    // Note spec allows more complicated matches such as slices and such
@@ -251,7 +259,11 @@ AstAssignW* V3Inst::pinReconnectSimple(AstPin* pinp, AstCell* cellp, AstNodeModu
 	&& connectRefp
 	&& connectRefp->varp()->dtypep()->sameTree(pinVarp->dtypep())
 	&& !connectRefp->varp()->isSc()) { // Need the signal as a 'shell' to convert types
-	// Done.  Same data type
+	// Done. Same data type
+    } else if (!alwaysCvt
+	       && connectRefp
+	       && connectRefp->varp()->isIfaceRef()) {
+	// Done. Interface
     } else if (!alwaysCvt
 	       && connBasicp
 	       && pinBasicp
@@ -265,10 +277,11 @@ AstAssignW* V3Inst::pinReconnectSimple(AstPin* pinp, AstCell* cellp, AstNodeModu
 	// Done. Constant.
     } else {
 	// Make a new temp wire
-	//if (1||debug()>=9) { pinp->dumpTree(cout,"in_pin:"); }
+	//if (1||debug()>=9) { pinp->dumpTree(cout,"-in_pin:"); }
 	AstNode* pinexprp = pinp->exprp()->unlinkFrBack();
-	string newvarname = ((pinVarp->isOutput() ? "__Vcellout__" : "__Vcellinp__")
-			     +cellp->name()+"__"+pinp->name());
+	string newvarname = ((string)(pinVarp->isOutput() ? "__Vcellout" : "__Vcellinp")
+			     +(forTristate?"t":"")  // Prevent name conflict if both tri & non-tri add signals
+			     +"__"+cellp->name()+"__"+pinp->name());
 	AstVar* newvarp = new AstVar (pinVarp->fileline(), AstVarType::MODULETEMP, newvarname, pinVarp);
 	// Important to add statement next to cell, in case there is a generate with same named cell
 	cellp->addNextHere(newvarp);
@@ -291,15 +304,14 @@ AstAssignW* V3Inst::pinReconnectSimple(AstPin* pinp, AstCell* cellp, AstNodeModu
 	    pinp->exprp(new AstVarRef (pinexprp->fileline(), newvarp, true));
 	} else {
 	    // V3 width should have range/extended to make the widths correct
-	    if (pinexprp->width() != pinVarp->width()) pinp->v3fatalSrc("Input pin width mismatch");
 	    assignp = new AstAssignW (pinp->fileline(),
 				      new AstVarRef(pinp->fileline(), newvarp, true),
 				      pinexprp);
 	    pinp->exprp(new AstVarRef (pinexprp->fileline(), newvarp, false));
 	}
 	if (assignp) cellp->addNextHere(assignp);
-	//if (1||debug()) { pinp->dumpTree(cout,"  out:"); }
-	//if (1||debug()) { assignp->dumpTree(cout," aout:"); }
+	//if (debug()) { pinp->dumpTree(cout,"-  out:"); }
+	//if (debug()) { assignp->dumpTree(cout,"- aout:"); }
     }
     return assignp;
 }

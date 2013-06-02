@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -38,6 +38,9 @@ class VFlagLogicPacked {};
 class VFlagBitPacked {};
 class VFlagChildDType {};  // Used by parser.y to select constructor that sets childDType
 
+// For broken() function, return error string if have a match
+#define BROKEN_RTN(test) do { if (VL_UNLIKELY(test)) return # test; } while(0)
+
 //######################################################################
 
 class AstType {
@@ -47,6 +50,7 @@ public:
     //   enum en {...};
     //   const char* ascii() const {...};
     enum en m_e;
+    // cppcheck-suppress uninitVar  // responsiblity of each subclass
     inline AstType () {}
     inline AstType (en _e) : m_e(_e) {}
     explicit inline AstType (int _e) : m_e(static_cast<en>(_e)) {}
@@ -219,7 +223,16 @@ class AstAttrType {
 public:
     enum en {
 	ILLEGAL,
-	EXPR_BITS,			// V3Const converts to constant
+	//
+	DIM_BITS,			// V3Const converts to constant
+	DIM_DIMENSIONS,			// V3Width converts to constant
+	DIM_HIGH,			// V3Width processes
+	DIM_INCREMENT,			// V3Width processes
+	DIM_LEFT,			// V3Width processes
+	DIM_LOW,			// V3Width processes
+	DIM_RIGHT,			// V3Width processes
+	DIM_SIZE,			// V3Width processes
+	DIM_UNPK_DIMENSIONS,		// V3Width converts to constant
 	//
 	MEMBER_BASE,			// V3LinkResolve creates for AstPreSel, V3LinkParam removes
 	//
@@ -237,7 +250,10 @@ public:
     enum en m_e;
     const char* ascii() const {
 	static const char* names[] = {
-	    "%E-AT", "EXPR_BITS", "MEMBER_BASE",
+	    "%E-AT",
+	    "DIM_BITS", "DIM_DIMENSIONS", "DIM_HIGH", "DIM_INCREMENT", "DIM_LEFT",
+	    "DIM_LOW", "DIM_RIGHT", "DIM_SIZE", "DIM_UNPK_DIMENSIONS",
+	    "MEMBER_BASE",
 	    "VAR_BASE", "VAR_CLOCK", "VAR_CLOCK_ENABLE", "VAR_PUBLIC",
 	    "VAR_PUBLIC_FLAT", "VAR_PUBLIC_FLAT_RD","VAR_PUBLIC_FLAT_RW",
 	    "VAR_ISOLATE_ASSIGNMENTS", "VAR_SC_BV", "VAR_SFORMAT"
@@ -394,7 +410,8 @@ public:
 	BLOCKTEMP,
 	MODULETEMP,
 	STMTTEMP,
-	XTEMP
+	XTEMP,
+	IFACEREF	// Used to link Interfaces between modules
     };
     enum en m_e;
     inline AstVarType () : m_e(UNKNOWN) {}
@@ -408,7 +425,8 @@ public:
 	    "SUPPLY0","SUPPLY1","WIRE","IMPLICITWIRE",
 	    "TRIWIRE","TRI0","TRI1",
 	    "PORT",
-	    "BLOCKTEMP","MODULETEMP","STMTTEMP","XTEMP"};
+	    "BLOCKTEMP","MODULETEMP","STMTTEMP","XTEMP",
+	    "IFACEREF"};
 	return names[m_e]; }
     bool isSignal() const  { return (m_e==WIRE || m_e==IMPLICITWIRE
 				     || m_e==TRIWIRE
@@ -451,6 +469,30 @@ public:
   inline bool operator== (AstBranchPred lhs, AstBranchPred::en rhs) { return (lhs.m_e == rhs); }
   inline bool operator== (AstBranchPred::en lhs, AstBranchPred rhs) { return (lhs == rhs.m_e); }
   inline ostream& operator<<(ostream& os, AstBranchPred rhs) { return os<<rhs.ascii(); }
+
+//######################################################################
+
+class VAlwaysKwd {
+public:
+    enum en {
+	ALWAYS,
+	ALWAYS_FF,
+	ALWAYS_LATCH,
+	ALWAYS_COMB
+    };
+    enum en m_e;
+    inline VAlwaysKwd () : m_e(ALWAYS) {}
+    inline VAlwaysKwd (en _e) : m_e(_e) {}
+    explicit inline VAlwaysKwd (int _e) : m_e(static_cast<en>(_e)) {}
+    operator en () const { return m_e; }
+    const char* ascii() const {
+	static const char* names[] = {
+	    "always","always_ff","always_latch","always_comb"};
+	return names[m_e]; }
+  };
+  inline bool operator== (VAlwaysKwd lhs, VAlwaysKwd rhs) { return (lhs.m_e == rhs.m_e); }
+  inline bool operator== (VAlwaysKwd lhs, VAlwaysKwd::en rhs) { return (lhs.m_e == rhs); }
+  inline bool operator== (VAlwaysKwd::en lhs, VAlwaysKwd rhs) { return (lhs == rhs.m_e); }
 
 //######################################################################
 
@@ -505,11 +547,7 @@ class AstParseRefExp {
 public:
     enum en {
 	PX_NONE,	// Used in V3LinkParse only
-	PX_TEXT,	// Unknown ID component
-	PX_PREDOT,	// Module name or misc component above var/task/func/member
-	PX_VAR_MEM,	// Variable that must be a memory
-	PX_VAR_ANY,	// Variable/structure member
-	PX_FTASK	// Task/Function (AstParse::ftaskrefp() will be set)
+	PX_TEXT		// Unknown ID component
     };
     enum en m_e;
     inline AstParseRefExp() : m_e(PX_NONE) {}
@@ -518,7 +556,7 @@ public:
     operator en () const { return m_e; }
     const char* ascii() const {
 	static const char* names[] = {
-	    "","TEXT","PREDOT","VAR_MEM","VAR_ANY","FTASK"};
+	    "","TEXT","PREDOT"};
 	return names[m_e]; }
   };
   inline bool operator== (AstParseRefExp lhs, AstParseRefExp rhs) { return (lhs.m_e == rhs.m_e); }
@@ -531,8 +569,8 @@ public:
 // See also AstRange, which is a symbolic version of this
 
 struct VNumRange {
-    int		m_msb;		// MSB, MSB always >= LSB
-    int		m_lsb;		// LSB
+    int		m_hi;		// HI part, HI always >= LO
+    int		m_lo;		// LO
     union {
 	int mu_flags;
 	struct {
@@ -541,33 +579,38 @@ struct VNumRange {
 	};
     };
     inline bool operator== (const VNumRange& rhs) const {
-	return m_msb == rhs.m_msb
-	    && m_lsb == rhs.m_lsb
+	return m_hi == rhs.m_hi
+	    && m_lo == rhs.m_lo
 	    && mu_flags == rhs.mu_flags; }
     inline bool operator< (const VNumRange& rhs) const {
-	if ( (m_msb <  rhs.m_msb)) return true;
-	if (!(m_msb == rhs.m_msb)) return false;  // lhs > rhs
-	if ( (m_lsb <  rhs.m_lsb)) return true;
-	if (!(m_lsb == rhs.m_lsb)) return false;  // lhs > rhs
+	if ( (m_hi <  rhs.m_hi)) return true;
+	if (!(m_hi == rhs.m_hi)) return false;  // lhs > rhs
+	if ( (m_lo <  rhs.m_lo)) return true;
+	if (!(m_lo == rhs.m_lo)) return false;  // lhs > rhs
 	if ( (mu_flags <  rhs.mu_flags)) return true;
 	if (!(mu_flags == rhs.mu_flags)) return false;  // lhs > rhs
 	return false;
     }
     //
-    VNumRange() : m_msb(0), m_lsb(0), mu_flags(0) {}
+    VNumRange() : m_hi(0), m_lo(0), mu_flags(0) {}
+    VNumRange(int hi, int lo, bool littleEndian)
+	: m_hi(0), m_lo(0), mu_flags(0)
+	{ init(hi,lo,littleEndian); }
     ~VNumRange() {}
     // MEMBERS
-    void init(int msb, int lsb, bool littleEndian) {
-	m_msb=msb; m_lsb=lsb; mu_flags=0; m_ranged=true; m_littleEndian=littleEndian;
+    void init(int hi, int lo, bool littleEndian) {
+	m_hi=hi; m_lo=lo; mu_flags=0; m_ranged=true; m_littleEndian=littleEndian;
     }
-    int msb() const { return m_msb; }
-    int lsb() const { return m_lsb; }
-    int left() const { return littleEndian()?lsb():msb(); }  // How to show a declaration
-    int right() const { return littleEndian()?msb():lsb(); }
+    int hi() const { return m_hi; }
+    int lo() const { return m_lo; }
+    int left() const { return littleEndian()?lo():hi(); }  // How to show a declaration
+    int right() const { return littleEndian()?hi():lo(); }
+    int elements() const { return hi()-lo()+1; }
     bool ranged() const { return m_ranged; }
     bool littleEndian() const { return m_littleEndian; }
+    int hiMaxSelect() const { return (lo()<0 ? hi()-lo() : hi()); } // Maximum value a [] select may index
     bool representableByWidth() const  // Could be represented by just width=1, or [width-1:0]
-	{ return (!m_ranged || (m_lsb==0 && m_msb>=1 && !m_littleEndian)); }
+	{ return (!m_ranged || (m_lo==0 && m_hi>=1 && !m_littleEndian)); }
 };
 
 //######################################################################
@@ -769,7 +812,7 @@ protected:
     RelinkWhatEn m_chg;
     AstNode** m_iterpp;
 public:
-    AstNRelinker() { m_backp=NULL; m_chg=RELINK_BAD; m_iterpp=NULL;}
+    AstNRelinker() { m_oldp=NULL; m_backp=NULL; m_chg=RELINK_BAD; m_iterpp=NULL;}
     void relink(AstNode* newp);
     AstNode* oldp() const { return m_oldp; }
     void dump(ostream& str=cout) const;
@@ -1061,7 +1104,7 @@ public:
     void	dtypeFrom(AstNode* fromp) { if (fromp) { dtypep(fromp->dtypep()); }}
     void	dtypeChgSigned(bool flag=true);
     void	dtypeChgWidth(int width, int widthMin);
-    void	dtypeChgWidthSigned(int width, int widthMin, bool issigned);
+    void	dtypeChgWidthSigned(int width, int widthMin, AstNumeric numeric);
     void	dtypeSetBitSized(int width, int widthMin, AstNumeric numeric) { dtypep(findBitDType(width,widthMin,numeric)); }
     void	dtypeSetLogicSized(int width, int widthMin, AstNumeric numeric) { dtypep(findLogicDType(width,widthMin,numeric)); }
     void	dtypeSetLogicBool()	{ dtypep(findLogicBoolDType()); }
@@ -1078,6 +1121,7 @@ public:
     AstNodeDType* findUInt64DType()	{ return findBasicDType(AstBasicDTypeKwd::UINT64); }  // Twostate
     AstNodeDType* findBitDType(int width, int widthMin, AstNumeric numeric) const;
     AstNodeDType* findLogicDType(int width, int widthMin, AstNumeric numeric) const;
+    AstNodeDType* findLogicRangeDType(VNumRange range, int widthMin, AstNumeric numeric) const;
     AstNodeDType* findBasicDType(AstBasicDTypeKwd kwd) const;
     AstBasicDType* findInsertSameDType(AstBasicDType* nodep);
 
@@ -1121,6 +1165,7 @@ public:
     virtual bool isPure() const { return true; }	// Else a $display, etc, that must be ordered with other displays
     virtual bool isBrancher() const { return false; }	// Changes control flow, disable some optimizations
     virtual bool isGateOptimizable() const { return true; }	// Else a AstTime etc that can't be pushed out
+    virtual bool isGateDedupable() const { return isGateOptimizable(); }  // GateDedupable is a slightly larger superset of GateOptimzable (eg, AstNodeIf)
     virtual bool isSubstOptimizable() const { return true; }	// Else a AstTime etc that can't be substituted out
     virtual bool isPredictOptimizable() const { return true; }	// Else a AstTime etc which output can't be predicted from input
     virtual bool isOutputter() const { return false; }	// Else creates output or exits, etc, not unconsumed
@@ -1131,7 +1176,7 @@ public:
     virtual bool hasDType() const { return false; }	// Iff has a data type; dtype() must be non null
     virtual AstNodeDType* getChildDTypep() const { return NULL; } // Iff has a non-null childDTypep(), as generic node function
     virtual bool maybePointedTo() const { return false; }  // Another AstNode* may have a pointer into this node, other then normal front/back/etc.
-    virtual bool broken() const { return false; }
+    virtual const char* broken() const { return NULL; }
 
     // INVOKERS
     virtual void accept(AstNVisitor& v, AstNUser* vup=NULL) = 0;
@@ -1374,6 +1419,7 @@ public:
     void	addIfsp(AstNode* newp)		{ addOp2p(newp); }
     void	addElsesp(AstNode* newp)	{ addOp3p(newp); }
     virtual bool isGateOptimizable() const { return false; }
+    virtual bool isGateDedupable() const { return true; }
     virtual int  instrCount() const { return instrCountBranch(); }
     virtual V3Hash sameHash() const { return V3Hash(); }
     virtual bool same(AstNode* samep) const { return true; }
@@ -1431,7 +1477,7 @@ public:
     }
     ASTNODE_BASE_FUNCS(NodeVarRef)
     virtual bool hasDType() const { return true; }
-    virtual bool broken() const;
+    virtual const char* broken() const;
     virtual int instrCount() const { return widthInstrs(); }
     virtual void cloneRelink();
     virtual string name()	const { return m_name; }		// * = Var name
@@ -1502,7 +1548,7 @@ public:
     //
     // Changing the width may confuse the data type resolution, so must clear TypeTable cache after use.
     void widthForce(int width, int sized) { m_width=width; m_widthMin=sized; }
-    // For backward compatibility AstArrayDType and others inherit width and signing from the subDType/base type
+    // For backward compatibility inherit width and signing from the subDType/base type
     void widthFromSub(AstNodeDType* nodep) { m_width=nodep->m_width; m_widthMin=nodep->m_widthMin; m_numeric=nodep->m_numeric; }
     //
     int	width() const { return m_width; }
@@ -1518,8 +1564,8 @@ public:
     bool generic() const { return m_generic; }
     void generic(bool flag) { m_generic = flag; }
     AstNodeDType* dtypeDimensionp(int depth);
-    pair<uint32_t,uint32_t> dimensions();
-    uint32_t	arrayElements();	// 1, or total multiplication of all dimensions
+    pair<uint32_t,uint32_t> dimensions(bool includeBasic);
+    uint32_t	arrayUnpackedElements();	// 1, or total multiplication of all dimensions
     static int uniqueNumInc() { return ++s_uniqueNum; }
 };
 
@@ -1538,7 +1584,7 @@ public:
 	numeric(numericUnpack.isSigned() ? AstNumeric::SIGNED : AstNumeric::UNSIGNED);
     }
     ASTNODE_BASE_FUNCS(NodeClassDType)
-    virtual bool broken() const;
+    virtual const char* broken() const;
     virtual void dump(ostream& str);
     // For basicp() we reuse the size to indicate a "fake" basic type of same size
     virtual AstBasicDType* basicp() const { return findLogicDType(width(),width(),numeric())->castBasicDType(); }
@@ -1555,6 +1601,54 @@ public:
 	MemberNameMap::const_iterator it = m_members.find(name);
 	return (it==m_members.end()) ? NULL : it->second;
     }
+    int lsb() const { return 0; }
+    int msb() const { return dtypep()->width()-1; }  // Packed classes look like arrays
+    VNumRange declRange() const { return VNumRange(msb(), lsb(), false); }
+};
+
+struct AstNodeArrayDType : public AstNodeDType {
+    // Array data type, ie "some_dtype var_name [2:0]"
+    // Children: DTYPE (moved to refDTypep() in V3Width)
+    // Children: RANGE (array bounds)
+private:
+    AstNodeDType*	m_refDTypep;	// Elements of this type (after widthing)
+    AstNode*	rangenp() const { return op2p(); }	// op2 = Array(s) of variable
+public:
+    AstNodeArrayDType(FileLine* fl) : AstNodeDType(fl) {
+	m_refDTypep = NULL;
+    }
+    ASTNODE_BASE_FUNCS(NodeArrayDType)
+    virtual void dump(ostream& str);
+    virtual void dumpSmall(ostream& str);
+    virtual const char* broken() const { BROKEN_RTN(!((m_refDTypep && !childDTypep() && m_refDTypep->brokeExists())
+						     || (!m_refDTypep && childDTypep()))); return NULL; }
+    virtual void cloneRelink() { if (m_refDTypep && m_refDTypep->clonep()) {
+	m_refDTypep = m_refDTypep->clonep()->castNodeDType();
+    }}
+    virtual bool same(AstNode* samep) const {
+	AstNodeArrayDType* sp = samep->castNodeArrayDType();
+	return (msb()==sp->msb()
+		&& subDTypep()==sp->subDTypep()
+		&& rangenp()->sameTree(sp->rangenp())); }  // HashedDT doesn't recurse, so need to check children
+    virtual V3Hash sameHash() const { return V3Hash(V3Hash(m_refDTypep),V3Hash(msb()),V3Hash(lsb())); }
+    AstNodeDType* getChildDTypep() const { return childDTypep(); }
+    AstNodeDType* childDTypep() const { return op1p()->castNodeDType(); } // op1 = Range of variable
+    void	childDTypep(AstNodeDType* nodep) { setOp1p(nodep); }
+    AstNodeDType* subDTypep() const { return m_refDTypep ? m_refDTypep : childDTypep(); }
+    void refDTypep(AstNodeDType* nodep) { m_refDTypep = nodep; }
+    virtual AstNodeDType* virtRefDTypep() const { return m_refDTypep; }
+    virtual void virtRefDTypep(AstNodeDType* nodep) { refDTypep(nodep); }
+    AstRange*	rangep() const { return op2p()->castRange(); }	// op2 = Array(s) of variable
+    void	rangep(AstRange* nodep);
+    // METHODS
+    virtual AstBasicDType* basicp() const { return subDTypep()->basicp(); }  // (Slow) recurse down to find basic data type
+    virtual AstNodeDType* skipRefp() const { return (AstNodeDType*)this; }
+    virtual int widthAlignBytes() const { return subDTypep()->widthAlignBytes(); }
+    virtual int widthTotalBytes() const { return elementsConst() * subDTypep()->widthTotalBytes(); }
+    int		msb() const;
+    int		lsb() const;
+    int		elementsConst() const;
+    VNumRange declRange() const;
 };
 
 struct AstNodeSel : public AstNodeBiop {
@@ -1651,7 +1745,7 @@ public:
 	addNOp2p(pinsp);
     }
     ASTNODE_BASE_FUNCS(NodeFTaskRef)
-    virtual bool broken() const { return m_taskp && !m_taskp->brokeExists(); }
+    virtual const char* broken() const { BROKEN_RTN(m_taskp && !m_taskp->brokeExists()); return NULL; }
     virtual void cloneRelink() { if (m_taskp && m_taskp->clonep()) {
 	m_taskp = m_taskp->clonep()->castNodeFTask();
     }}
@@ -1688,13 +1782,14 @@ private:
     bool	m_modTrace:1;	// Tracing this module
     bool	m_inLibrary:1;	// From a library, no error if not used, never top level
     bool	m_dead:1;	// LinkDot believes is dead; will remove in Dead visitors
+    bool	m_internal:1;	// Internally created
     int		m_level;	// 1=top module, 2=cell off top module, ...
     int		m_varNum;	// Incrementing variable number
 public:
     AstNodeModule(FileLine* fl, const string& name)
 	: AstNode (fl)
 	,m_name(name), m_origName(name)
-	,m_modPublic(false), m_modTrace(false), m_inLibrary(false), m_dead(false)
+	,m_modPublic(false), m_modTrace(false), m_inLibrary(false), m_dead(false), m_internal(false)
 	,m_level(0), m_varNum(0) { }
     ASTNODE_BASE_FUNCS(NodeModule)
     virtual void dump(ostream& str);
@@ -1721,6 +1816,8 @@ public:
     bool modTrace() const 	{ return m_modTrace; }
     void dead(bool flag) 	{ m_dead = flag; }
     bool dead() const	 	{ return m_dead; }
+    void internal(bool flag) 	{ m_internal = flag; }
+    bool internal() const	{ return m_internal; }
 };
 
 //######################################################################
@@ -1748,5 +1845,16 @@ inline bool AstNode::isAllOnes()  { return (this->castConst() && this->castConst
 inline bool AstNode::isAllOnesV() { return (this->castConst() && this->castConst()->isEqAllOnesV()); }
 
 inline void AstNodeVarRef::init() { if (m_varp) dtypep(m_varp->dtypep()); }
+
+inline void AstNodeArrayDType::rangep(AstRange* nodep) { setOp2p(nodep); }
+inline int AstNodeArrayDType::msb() const { return rangep()->msbConst(); }
+inline int AstNodeArrayDType::lsb() const { return rangep()->lsbConst(); }
+inline int AstNodeArrayDType::elementsConst() const { return rangep()->elementsConst(); }
+inline VNumRange AstNodeArrayDType::declRange() const { return VNumRange(msb(), lsb(), rangep()->littleEndian()); }
+
+inline void AstIfaceRefDType::cloneRelink() {
+    if (m_cellp && m_cellp->clonep()) m_cellp = m_cellp->clonep()->castCell();
+    if (m_ifacep && m_ifacep->clonep()) m_ifacep = m_ifacep->clonep()->castIface();
+    if (m_modportp && m_modportp->clonep()) m_modportp = m_modportp->clonep()->castModport(); }
 
 #endif // Guard

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -80,7 +80,7 @@ public:
     string debugFilename(const string& nameComment, int newNumber=0) {
 	++m_debugFileNumber;
 	if (newNumber) m_debugFileNumber = newNumber;
-	char digits[100]; sprintf(digits, "%02d", m_debugFileNumber);
+	char digits[100]; sprintf(digits, "%03d", m_debugFileNumber);
 	return opt.makeDir()+"/"+opt.prefix()+"_"+digits+"_"+nameComment;
     }
     bool needHInlines() const { return m_needHInlines; }

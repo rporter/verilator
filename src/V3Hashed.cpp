@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -105,12 +105,16 @@ public:
 //######################################################################
 // Hashed class functions
 
-void V3Hashed::hashAndInsert(AstNode* nodep) {
+V3Hashed::iterator V3Hashed::hashAndInsert(AstNode* nodep) {
+    hash(nodep);
+    return m_hashMmap.insert(make_pair(nodeHash(nodep), nodep));
+}
+
+void V3Hashed::hash(AstNode* nodep) {
     UINFO(8,"   hashI "<<nodep<<endl);
     if (!nodep->user4p()) {
 	HashedVisitor visitor (nodep);
     }
-    m_hashMmap.insert(make_pair(nodeHash(nodep), nodep));
 }
 
 bool V3Hashed::sameNodes(AstNode* node1p, AstNode* node2p) {
@@ -183,6 +187,19 @@ V3Hashed::iterator V3Hashed::findDuplicate(AstNode* nodep) {
     for (HashMmap::iterator eqit = eqrange.first; eqit != eqrange.second; ++eqit) {
 	AstNode* node2p = eqit->second;
 	if (nodep != node2p && sameNodes(nodep, node2p)) {
+	    return eqit;
+	}
+    }
+    return end();
+}
+
+V3Hashed::iterator V3Hashed::findDuplicate(AstNode* nodep, V3HashedUserCheck* checkp) {
+    UINFO(8,"   findD "<<nodep<<endl);
+    if (!nodep->user4p()) nodep->v3fatalSrc("Called findDuplicate on non-hashed node");
+    pair <HashMmap::iterator,HashMmap::iterator> eqrange = mmap().equal_range(nodeHash(nodep));
+    for (HashMmap::iterator eqit = eqrange.first; eqit != eqrange.second; ++eqit) {
+	AstNode* node2p = eqit->second;
+	if (nodep != node2p && checkp->check(nodep,node2p) && sameNodes(nodep, node2p)) {
 	    return eqit;
 	}
     }

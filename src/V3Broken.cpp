@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -202,8 +202,8 @@ class BrokenCheckVisitor : public AstNVisitor {
 private:
     virtual void visit(AstNode* nodep, AstNUser*) {
 	BrokenTable::setUnder(nodep,true);
-	if (nodep->broken()) {
-	    nodep->v3fatalSrc("Broken link in node (or something without maybePointedTo)");
+	if (const char* whyp=nodep->broken()) {
+	    nodep->v3fatalSrc("Broken link in node (or something without maybePointedTo): "<<whyp);
 	}
 	if (nodep->dtypep()) {
 	    if (!nodep->dtypep()->brokeExists()) { nodep->v3fatalSrc("Broken link in node->dtypep() to "<<(void*)nodep->dtypep()); }

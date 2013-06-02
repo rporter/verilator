@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2009-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2009-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -128,7 +128,7 @@ public:
 	}
 	// Walk old sym table and reinsert into current table
 	// We let V3LinkDot report the error instead of us
-	symCurrentp()->import(symp, id_or_star);
+	symCurrentp()->importFromPackage(&m_syms, symp, id_or_star);
     }
 public:
     // CREATORS

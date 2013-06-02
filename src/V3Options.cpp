@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2012 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2013 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -28,6 +28,7 @@
 #include <cctype>
 #include <dirent.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <set>
 #include <list>
 #include <map>
@@ -77,7 +78,7 @@ struct V3OptionsImp {
 	    }
 	}
     }
-    void addLangExt(const string &langext, const V3LangCode lc) {
+    void addLangExt(const string& langext, const V3LangCode& lc) {
 	// New language extension replaces any pre-existing one.
 	(void)m_langExts.erase(langext);
 	m_langExts[langext] = lc;
@@ -98,7 +99,7 @@ void V3Options::addIncDirUser(const string& incdir) {
 void V3Options::addIncDirFallback(const string& incdir) {
     m_impp->addIncDirFallback(incdir);
 }
-void V3Options::addLangExt(const string &langext, const V3LangCode lc) {
+void V3Options::addLangExt(const string& langext, const V3LangCode& lc) {
     m_impp->addLangExt(langext, lc);
 }
 void V3Options::addLibExtV(const string& libext) {
@@ -275,6 +276,17 @@ bool V3Options::fileStatNormal(const string& filename) {
     if (err!=0) return false;
     if (S_ISDIR(m_stat.st_mode)) return false;
     return true;
+}
+
+void V3Options::fileNfsFlush(const string& filename) {
+    // NFS caches stat() calls so to get up-to-date information must
+    // do a open or opendir on the filename.
+    // Faster to just try both rather than check if a file is a dir.
+    if (DIR* dirp = opendir(filename.c_str())) {
+	closedir(dirp);
+    } else if (int fd = ::open(filename.c_str(), O_RDONLY)) {
+	if (fd>0) ::close(fd);
+    }
 }
 
 string V3Options::fileExists (const string& filename) {
@@ -661,14 +673,15 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 	    else if ( !strncmp (sw, "+incdir+", 8)) {
 		addIncDirUser (parseFileArg(optdir, string (sw+strlen("+incdir+"))));
 	    }
-	    else if (parseLangExt(sw, "+systemverilogext+", V3LangCode::L1800_2009)
+	    else if (parseLangExt(sw, "+systemverilogext+", V3LangCode::L1800_2012)
 		     || parseLangExt(sw, "+verilog1995ext+", V3LangCode::L1364_1995)
 		     || parseLangExt(sw, "+verilog2001ext+", V3LangCode::L1364_2001)
 		     || parseLangExt(sw, "+1364-1995ext+", V3LangCode::L1364_1995)
 		     || parseLangExt(sw, "+1364-2001ext+", V3LangCode::L1364_2001)
 		     || parseLangExt(sw, "+1364-2005ext+", V3LangCode::L1364_2005)
 		     || parseLangExt(sw, "+1800-2005ext+", V3LangCode::L1800_2005)
-		     || parseLangExt(sw, "+1800-2009ext+", V3LangCode::L1800_2009)) {
+		     || parseLangExt(sw, "+1800-2009ext+", V3LangCode::L1800_2009)
+		     || parseLangExt(sw, "+1800-2012ext+", V3LangCode::L1800_2012)) {
 		// Nothing to do here - all done in the test
 
 	    }
@@ -724,11 +737,14 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 	    else if ( onoff   (sw, "-lint-only", flag/*ref*/) )	{ m_lintOnly = flag; }
 	    else if ( !strcmp (sw, "-no-pins64") )		{ m_pinsBv = 33; }
 	    else if ( !strcmp (sw, "-pins64") )			{ m_pinsBv = 65; }
+	    else if ( onoff   (sw, "-pins-sc-uint", flag/*ref*/) ){ m_pinsScUint = flag; if (!m_pinsScBigUint) m_pinsBv = 65; }
+	    else if ( onoff   (sw, "-pins-sc-biguint", flag/*ref*/) ){ m_pinsScBigUint = flag; m_pinsBv = 513; }
 	    else if ( onoff   (sw, "-pins-uint8", flag/*ref*/) ){ m_pinsUint8 = flag; }
 	    else if ( !strcmp (sw, "-private") )		{ m_public = false; }
 	    else if ( onoff   (sw, "-profile-cfuncs", flag/*ref*/) )	{ m_profileCFuncs = flag; }
 	    else if ( onoff   (sw, "-psl", flag/*ref*/) )		{ m_psl = flag; }
 	    else if ( onoff   (sw, "-public", flag/*ref*/) )		{ m_public = flag; }
+	    else if ( onoff   (sw, "-report-unoptflat", flag/*ref*/) )	{ m_reportUnoptflat = flag; }
 	    else if ( onoff   (sw, "-savable", flag/*ref*/) )		{ m_savable = flag; }
 	    else if ( !strcmp (sw, "-sc") )				{ m_outFormatOk = true; m_systemC = true; m_systemPerl = false; }
 	    else if ( onoff   (sw, "-skip-identical", flag/*ref*/) )	{ m_skipIdentical = flag; }
@@ -753,6 +769,7 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 		    case 'a': m_oTable = flag; break;
 		    case 'b': m_oCombine = flag; break;
 		    case 'c': m_oConst = flag; break;
+		    case 'd': m_oDedupe = flag; break;
 		    case 'e': m_oCase = flag; break;
 		    case 'f': m_oFlopGater = flag; break;
 		    case 'g': m_oGate = flag; break;
@@ -1117,7 +1134,7 @@ string V3Options::parseFileArg(const string& optdir, const string& relfilename) 
 //! Utility to see if we have a language extension argument and if so add it.
 bool V3Options::parseLangExt (const char* swp, //!< argument text
 			      const char* langswp, //!< option to match
-			      const V3LangCode lc) { //!< language code
+			      const V3LangCode& lc) { //!< language code
     int len = strlen(langswp);
     if (!strncmp(swp, langswp, len)) {
 	addLangExt(swp + len, lc);
@@ -1135,7 +1152,7 @@ void V3Options::showVersion(bool verbose) {
     if (!verbose) return;
 
     cout <<endl;
-    cout << "Copyright 2003-2012 by Wilson Snyder.  Verilator is free software; you can\n";
+    cout << "Copyright 2003-2013 by Wilson Snyder.  Verilator is free software; you can\n";
     cout << "redistribute it and/or modify the Verilator internals under the terms of\n";
     cout << "either the GNU Lesser General Public License Version 3 or the Perl Artistic\n";
     cout << "License Version 2.0.\n";
@@ -1200,6 +1217,7 @@ V3Options::V3Options() {
     m_traceDups = false;
     m_traceUnderscore = false;
     m_underlineZero = false;
+    m_reportUnoptflat = false;
     m_xInitialEdge = false;
     m_xmlOnly = false;
 
@@ -1289,6 +1307,7 @@ void V3Options::optimize(int level) {
     m_oSubst = flag;
     m_oSubstConst = flag;
     m_oTable = flag;
+    m_oDedupe = flag;
     // And set specific optimization levels
     if (level >= 3) {
 	m_inlineMult = -1;	// Maximum inlining

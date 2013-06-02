@@ -3,11 +3,117 @@ Revision history for Verilator
 The contributors that suggested a given feature are shown in [].  [by ...]
 indicates the contributor was also the author of the fix; Thanks!
 
-* Verilator 3.84***
+* Verilator 3.848 devel
+
+**    Support interfaces and modports, bug102.  [Byron Bradley, Jeremy Bennett]
+
+***   Duplicate clock gate optimization on by default, bug621.
+
+****  Fix arrayed input compile error, bug645. [Krzysztof Jankowski]
+
+****  Fix GCC version runtime changes, bug651. [Jeremy Bennett]
+
+****  Fix packed array select internal error, bug652. [Krzysztof Jankowski]
+
+
+* Verilator 3.847 2013-05-11
+
+***   Add ALWCOMBORDER warning.  [KC Buckenmaier]
+      
+***   Add --pins-sc-uint and --pins-sc-biguint, bug638. [Alex Hornung]
+      
+****  Support "signal[vec]++".
+      
+****  Fix simulation error when inputs and MULTIDRIVEN, bug634. [Ted Campbell]
+      
+****  Fix module resolution with __, bug631. [Jason McMullan]
+      
+****  Fix packed array non-zero right index select crash, bug642. [Krzysztof Jankowski]
+      
+****  Fix nested union crash, bug643. [Krzysztof Jankowski]
+
+
+* Verilator 3.846 2013-03-09
+
+**    IEEE 1800-2012 is now the default language.  This adds 4 new keywords
+      and updates the svdpi.h and vpi_user.h header files.
+
+***   Add --report-unoptflat, bug611. [Jeremy Bennett]
+
+***   Add duplicate clock gate optimization, msg980. [Varun Koyyalagunta]
+      Disabled unless -OD or -O3 used, please try it as may get some
+      significant speedups.
+
+***   Fix wrong dot resolution under inlining. [Art Stamness]
+
+****  Support pattern assignment features, bug616, bug617, bug618. [Ed Lander]
+
+****  Support bind in $unit, bug602. [Ed Lander]
+
+****  Support <number>'() sized casts, bug628. [Ed Lander]
+
+****  Fix DETECTARRAY on packed structures, bug610. [Jeremy Bennett]
+
+****  Fix LITENDIAN on unpacked structures, bug614. [Wai Sum Mong]
+
+****  Fix 32-bit OS VPI scan issue, bug615.  [Jeremy Bennett, Rich Porter]
+
+****  Fix opening a VerilatedVcdC file multiple times, msg1021. [Frederic Requin]
+
+****  Fix UNOPTFLAT circular array bounds crossing, bug630. [Jie Xu]
+
+
+* Verilator 3.845 2013/02/04
+
+***   Fix nested packed arrays and struct, bug600. [Jeremy Bennett]
+      Packed arrays are now represented as a single linear vector in
+      Verilated models.  This may affect packed arrays that are public or
+      accessed via the VPI.
+
+***   Support wires with data types, bug608. [Ed Lander]
+
+***   Support bind, to module names only, bug602. [Ed Lander]
+
+***   Support VPI product info, warning calls, etc, bug588. [Rick Porter]
+
+***   Support $left, $right and related functions, bug448. [Iztok Jeras]
+
+***   Support inside expressions.
+
+***   Define SYSTEMVERILOG, SV_COV_START and other IEEE mandated predefines.
+
+****  Fix pin width mismatch error, bug595.  [Alex Solomatnikov]
+
+****  Fix implicit one bit parameter selection, bug603.  [Jeremy Bennett]
+
+****  Fix signed/unsigned parameter misconversion, bug606.  [Jeremy Bennett]
+
+****  Fix segfault on multidimensional dotted arrays, bug607.  [Jie Xu]
+
+****  Fix per-bit array output connection error, bug414.  [Jan Egil Ruud]
+
+****  Fix package logic var compile error.
+
+****  Fix enums with X values.
+
+
+* Verilator 3.844 2013/01/09
 
 ***   Support "unsigned int" DPI import functions, msg966.  [Alex Lee]
 
+***   Fix package resolution of parameters, bug586. [Jeremy Bennett]
+
 ****  Fix non-integer vpi_get_value, bug587.  [Rich Porter]
+
+****  Fix task inlining under $display and case, bug589, bug598.  [Holger Waechtler]
+
+****  Fix package import of non-localparam parameter, bug474, bug591.  [Jeremy Bennett]
+
+****  Fix package import of package imports, partial bug592.  [Jeremy Bennett]
+
+****  Fix package import preventing local var, bug599.  [Jeremy Bennett]
+
+****  Fix array extraction of implicit vars, bug601.  [Joe Eiler]
 
 
 * Verilator 3.843 2012/12/01
@@ -2139,7 +2245,7 @@ of input ports exists for tracing.
 
 This uses outline mode in Emacs.  See C-h m [M-x describe-mode].
 
-Copyright 2001-2012 by Wilson Snyder.  This program is free software; you
+Copyright 2001-2013 by Wilson Snyder.  This program is free software; you
 can redistribute it and/or modify it under the terms of either the GNU
 Lesser General Public License Version 3 or the Perl Artistic License
 Version 2.0.
