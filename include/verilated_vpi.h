@@ -91,9 +91,22 @@ public:
     static inline VerilatedVpio* castp(vpiHandle h) { return dynamic_cast<VerilatedVpio*>((VerilatedVpio*)h); }
     inline vpiHandle castVpiHandle() { return (vpiHandle)(this); }
     // ACCESSORS
-    virtual const char* name() { return "<null>"; }
-    virtual const char* fullname() { return "<null>"; }
-    virtual const char* defname() { return "<null>"; }
+    virtual const unsigned int size() { 
+//      _VL_VPI_WARNING(__FILE__, __LINE__, "vpi object has no vpiSize");
+      return 0;
+    }
+    virtual const char* name() { 
+//      _VL_VPI_WARNING(__FILE__, __LINE__, "vpi object has no vpiName");
+      return "<null>";
+    }
+    virtual const char* fullname() {
+//      _VL_VPI_WARNING(__FILE__, __LINE__, "vpi object has no vpiFullName");
+      return "<null>";
+    }
+    virtual const char* defname() {
+//      _VL_VPI_WARNING(__FILE__, __LINE__, "vpi object has no vpiDefName");
+      return "<null>";
+    }
     virtual vpiHandle dovpi_scan() { return 0; }
 };
 
@@ -191,6 +204,7 @@ public:
     vluint32_t mask() const { return m_mask.u32; }
     vluint8_t mask_byte(int idx) { return m_mask.u8[idx & 3]; }
     vluint32_t entSize() const { return m_entSize; }
+    virtual const unsigned int size() { return m_varp->range().bits(); }
     virtual const char* name() { return m_varp->name(); }
     virtual const char* fullname() {
 	VL_STATIC_OR_THREAD string out;
@@ -245,6 +259,30 @@ public:
 	} else {
 	    return 0;  // End of list - only one deep
 	}
+    }
+};
+
+class VerilatedVpioMemoryWordIter : public VerilatedVpio {
+    const VerilatedVar*		m_varp;
+    const vpiHandle		m_handle;
+    vlsint32_t                  m_iteration;
+    vlsint32_t                  m_direction;
+    bool                        m_done;
+public:
+    VerilatedVpioMemoryWordIter(const vpiHandle handle, const VerilatedVar* varp)
+	: m_handle(handle), m_varp(varp), m_iteration(varp->array().lhs()), m_direction(VL_LIKELY(varp->array().lhs()>varp->array().rhs())?-1:1), m_done(false) {  }
+    virtual ~VerilatedVpioMemoryWordIter() {}
+    static inline VerilatedVpioMemoryWordIter* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioMemoryWordIter*>((VerilatedVpio*)h); }
+    vlsint32_t size() const { return m_varp->array().bits(); }
+    void iterationInc() { if (!(m_done = m_iteration == m_varp->array().rhs())) m_iteration+=m_direction; }
+    virtual vpiHandle dovpi_scan() {
+        vpiHandle result;
+	if (m_done) {
+            return 0;
+	}
+        result = vpi_handle_by_index(m_handle, m_iteration);
+        iterationInc();
+        return result;
     }
 };
 
@@ -608,6 +646,7 @@ vpiHandle vpi_iterate(PLI_INT32 type, vpiHandle object) {
 	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
 	if (VL_UNLIKELY(!vop)) return 0;
 	if (vop->varp()->dims() < 2) return 0;
+	return (new VerilatedVpioMemoryWordIter(object, vop->varp()))->castVpiHandle();
 	// Unsupported is multidim list
 	return ((new VerilatedVpioRange(vop->varp()->array().lhs(),
 					vop->varp()->array().rhs()))
@@ -659,6 +698,11 @@ PLI_INT32 vpi_get(PLI_INT32 property, vpiHandle object) {
 	if (VL_UNLIKELY(!vop)) return 0;
 	if (vop->varp()->dims()==0) return 0;
 	else return 1;
+    }
+    case vpiSize: {
+	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
+	if (VL_UNLIKELY(!vop)) return 0;
+	return vop->varp()->range().bits();
     }
     default:
         _VL_VPI_WARNING(__FILE__, __LINE__, "%s: Unsupported type %s, nothing will be returned",
