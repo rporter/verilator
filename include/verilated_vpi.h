@@ -91,22 +91,9 @@ public:
     static inline VerilatedVpio* castp(vpiHandle h) { return dynamic_cast<VerilatedVpio*>((VerilatedVpio*)h); }
     inline vpiHandle castVpiHandle() { return (vpiHandle)(this); }
     // ACCESSORS
-    virtual const unsigned int size() { 
-//      _VL_VPI_WARNING(__FILE__, __LINE__, "vpi object has no vpiSize");
-      return 0;
-    }
-    virtual const char* name() { 
-//      _VL_VPI_WARNING(__FILE__, __LINE__, "vpi object has no vpiName");
-      return "<null>";
-    }
-    virtual const char* fullname() {
-//      _VL_VPI_WARNING(__FILE__, __LINE__, "vpi object has no vpiFullName");
-      return "<null>";
-    }
-    virtual const char* defname() {
-//      _VL_VPI_WARNING(__FILE__, __LINE__, "vpi object has no vpiDefName");
-      return "<null>";
-    }
+    virtual const char* name() { return "<null>"; }
+    virtual const char* fullname() { return "<null>"; }
+    virtual const char* defname() { return "<null>"; }
     virtual vpiHandle dovpi_scan() { return 0; }
 };
 
@@ -204,7 +191,8 @@ public:
     vluint32_t mask() const { return m_mask.u32; }
     vluint8_t mask_byte(int idx) { return m_mask.u8[idx & 3]; }
     vluint32_t entSize() const { return m_entSize; }
-    virtual const unsigned int size() { return m_varp->range().bits(); }
+    const unsigned int index() { return m_index; }
+    const unsigned int size() { return m_varp->range().bits(); }
     virtual const char* name() { return m_varp->name(); }
     virtual const char* fullname() {
 	VL_STATIC_OR_THREAD string out;
@@ -693,16 +681,22 @@ PLI_INT32 vpi_get(PLI_INT32 property, vpiHandle object) {
 	if (VL_UNLIKELY(!vop)) return 0;
 	return vop->varp()->vldir();
     }
+    case vpiScalar:
+	// DROP THROUGH
     case vpiVector: {
 	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
 	if (VL_UNLIKELY(!vop)) return 0;
-	if (vop->varp()->dims()==0) return 0;
-	else return 1;
+        return (property==vpiVector)^(vop->varp()->dims()==0);
     }
     case vpiSize: {
 	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
 	if (VL_UNLIKELY(!vop)) return 0;
 	return vop->varp()->range().bits();
+    }
+    case vpiIndex: {
+	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
+	if (VL_UNLIKELY(!vop)) return 0;
+	return vop->index();
     }
     default:
         _VL_VPI_WARNING(__FILE__, __LINE__, "%s: Unsupported type %s, nothing will be returned",
