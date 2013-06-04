@@ -51,10 +51,10 @@ class VerilatedRange {
 protected:
     friend class VerilatedVar;
     friend class VerilatedScope;
-    VerilatedRange() : m_lhs(0), m_rhs(0) {}
-    void sets(int lhs, int rhs) { m_lhs=lhs; m_rhs=rhs; }
 public:
+    VerilatedRange() : m_lhs(0), m_rhs(0) {}
     ~VerilatedRange() {}
+    void sets(int lhs, int rhs) { m_lhs=lhs; m_rhs=rhs; }
     int lhs() const { return m_lhs; }
     int rhs() const { return m_rhs; }
     int bits() const { return (VL_LIKELY(m_lhs>=m_rhs)?(m_lhs-m_rhs+1):(m_rhs-m_lhs+1)); }
