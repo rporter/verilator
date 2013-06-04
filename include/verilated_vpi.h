@@ -648,8 +648,21 @@ vpiHandle vpi_iterate(PLI_INT32 type, vpiHandle object) {
 	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
 	if (VL_UNLIKELY(!vop)) return 0;
 	if (vop->varp()->dims() < 2) return 0;
+        if (vop->varp()->dims() > 2) {
+	    _VL_VPI_WARNING(__FILE__, __LINE__, "%s: %s, object %s has unsupported number of indices (%d)",
+			    VL_FUNC, VerilatedVpiError::strFromVpiMethod(type), vop->fullname() , vop->varp()->dims());
+	}
 	return (new VerilatedVpioMemoryWordIter(object, vop->varp()))->castVpiHandle();
+    }
+    case vpiRange: {
+	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
+	if (VL_UNLIKELY(!vop)) return 0;
+	if (vop->varp()->dims() < 2) return 0;
 	// Unsupported is multidim list
+        if (vop->varp()->dims() > 2) {
+	    _VL_VPI_WARNING(__FILE__, __LINE__, "%s: %s, object %s has unsupported number of indices (%d)",
+			    VL_FUNC, VerilatedVpiError::strFromVpiMethod(type), vop->fullname() , vop->varp()->dims());
+	}
 	return ((new VerilatedVpioRange(vop->varp()->array().lhs(),
 					vop->varp()->array().rhs()))
 		->castVpiHandle());
