@@ -94,6 +94,7 @@ public:
     virtual const char* name() { return "<null>"; }
     virtual const char* fullname() { return "<null>"; }
     virtual const char* defname() { return "<null>"; }
+    virtual const vluint32_t type() { return 0; }
     virtual const vluint32_t size() { return 0; }
     virtual const vlsint32_t lhs() { return 0; }
     virtual const vlsint32_t rhs() { return 0; }
@@ -115,6 +116,7 @@ public:
     }
     virtual ~VerilatedVpioCb() {}
     static inline VerilatedVpioCb* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioCb*>((VerilatedVpio*)h); }
+    virtual const vluint32_t type() { return vpiCallback; }
     vluint32_t reason() const { return m_cbData.reason; }
     VerilatedPliCb cb_rtnp() const { return m_cbData.cb_rtn; }
     t_cb_data* cb_datap() { return &(m_cbData); }
@@ -127,6 +129,7 @@ public:
     VerilatedVpioConst(vlsint32_t num) : m_num(num) {}
     virtual ~VerilatedVpioConst() {}
     static inline VerilatedVpioConst* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioConst*>((VerilatedVpio*)h); }
+    virtual const vluint32_t type() { return vpiUndefined; }
     vlsint32_t num() const { return m_num; }
 };
 
@@ -139,6 +142,7 @@ public:
     }
     virtual ~VerilatedVpioRange() {}
     static inline VerilatedVpioRange* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioRange*>((VerilatedVpio*)h); }
+    virtual const vluint32_t type() { return vpiRange; }
     virtual const vluint32_t size() const { return range.bits(); }
     virtual const vlsint32_t lhs() const { return range.lhs(); }
     virtual const vlsint32_t rhs() const { return range.rhs(); }
@@ -162,6 +166,7 @@ public:
 	: m_scopep(scopep) {}
     virtual ~VerilatedVpioScope() {}
     static inline VerilatedVpioScope* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioScope*>((VerilatedVpio*)h); }
+    virtual const vluint32_t type() { return vpiScope; }
     const VerilatedScope* scopep() const { return m_scopep; }
     virtual const char* name() { return m_scopep->name(); }
     virtual const char* fullname() { return m_scopep->name(); }
@@ -198,6 +203,7 @@ public:
     vluint8_t mask_byte(int idx) { return m_mask.u8[idx & 3]; }
     vluint32_t entSize() const { return m_entSize; }
     const vluint32_t index() { return m_index; }
+    virtual const vluint32_t type() { return (varp()->dims()>1) ? vpiMemory : vpiReg; /* but might not be */ }
     virtual const vluint32_t size() { return range().bits(); }
     virtual const vlsint32_t lhs() { return range().lhs(); }
     virtual const vlsint32_t rhs() { return range().rhs(); }
@@ -227,6 +233,7 @@ public:
     }
     virtual ~VerilatedVpioVarIndex() {}
     static inline VerilatedVpioVarIndex* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioVarIndex*>((VerilatedVpio*)h); }
+    virtual const vluint32_t type() { return vpiMemoryWord; }
     virtual const vluint32_t size() { return varp()->range().bits(); }
     virtual const vlsint32_t lhs() { return varp()->range().lhs(); }
     virtual const vlsint32_t rhs() { return varp()->range().rhs(); }
@@ -247,6 +254,7 @@ public:
 	: m_scopep(scopep), m_started(false) {  }
     virtual ~VerilatedVpioVarIter() {}
     static inline VerilatedVpioVarIter* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioVarIter*>((VerilatedVpio*)h); }
+    virtual const vluint32_t type() { return vpiIterator; }
     virtual vpiHandle dovpi_scan() {
 	if (VL_LIKELY(m_scopep->varsp())) {
 	    if (VL_UNLIKELY(!m_started)) { m_it = m_scopep->varsp()->begin(); m_started=true; }
@@ -269,10 +277,11 @@ class VerilatedVpioMemoryWordIter : public VerilatedVpio {
     bool                        m_done;
 public:
     VerilatedVpioMemoryWordIter(const vpiHandle handle, const VerilatedVar* varp)
-	: m_handle(handle), m_varp(varp), m_iteration(varp->array().lhs()), m_direction(VL_LIKELY(varp->array().lhs()>varp->array().rhs())?-1:1), m_done(false) {  }
+	: m_handle(handle), m_varp(varp), m_iteration(varp->array().rhs()), m_direction(VL_LIKELY(varp->array().lhs()>varp->array().rhs())?1:-1), m_done(false) {  }
     virtual ~VerilatedVpioMemoryWordIter() {}
     static inline VerilatedVpioMemoryWordIter* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioMemoryWordIter*>((VerilatedVpio*)h); }
-    void iterationInc() { if (!(m_done = m_iteration == m_varp->array().rhs())) m_iteration+=m_direction; }
+    virtual const vluint32_t type() { return vpiIterator; }
+    void iterationInc() { if (!(m_done = m_iteration == m_varp->array().lhs())) m_iteration+=m_direction; }
     virtual vpiHandle dovpi_scan() {
         vpiHandle result;
 	if (m_done) {
@@ -698,9 +707,9 @@ PLI_INT32 vpi_get(PLI_INT32 property, vpiHandle object) {
 	return VL_TIME_PRECISION;
     }
     case vpiType: {
-	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
+	VerilatedVpio* vop = VerilatedVpioVar::castp(object);
 	if (VL_UNLIKELY(!vop)) return 0;
-	return ((vop->varp()->dims()>1) ? vpiMemory : vpiReg);
+	return vop->type();
     }
     case vpiDirection: {
 	// By forthought, the directions already are vpi enumerated
