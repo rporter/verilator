@@ -157,7 +157,18 @@ int _mon_check_memory() {
       CHECK_RESULT(value.value.integer, cnt);
     }
     CHECK_RESULT(cnt, 16); // should be 16 addresses
-
+    // make sure trying to get properties that don't exist
+    // doesn't crash
+    int should_be_0 = vpi_get(vpiSize, iter_h);
+    CHECK_RESULT(should_be_0, 0);
+    should_be_0 = vpi_get(vpiIndex, iter_h);
+    CHECK_RESULT(should_be_0, 0);
+    vpiHandle should_be_NULL = vpi_handle(vpiLeftRange, iter_h);
+    CHECK_RESULT(should_be_NULL, 0);
+    should_be_NULL = vpi_handle(vpiRightRange, iter_h);
+    CHECK_RESULT(should_be_NULL, 0);
+    should_be_NULL = vpi_handle(vpiScope, iter_h);
+    CHECK_RESULT(should_be_NULL, 0);
     return 0; // Ok
 }
 
