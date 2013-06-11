@@ -218,16 +218,16 @@ public:
     }
 };
 
-class VerilatedVpioVarIndex : public VerilatedVpioVar {
+class VerilatedVpioMemoryWord : public VerilatedVpioVar {
 public:
-    VerilatedVpioVarIndex(const VerilatedVar* varp, const VerilatedScope* scopep,
+    VerilatedVpioMemoryWord(const VerilatedVar* varp, const VerilatedScope* scopep,
 			  vlsint32_t index, int offset)
 	: VerilatedVpioVar(varp, scopep) {
 	m_index = index;
 	m_varDatap = ((vluint8_t*)varp->datap()) + entSize()*offset;
     }
-    virtual ~VerilatedVpioVarIndex() {}
-    static inline VerilatedVpioVarIndex* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioVarIndex*>((VerilatedVpio*)h); }
+    virtual ~VerilatedVpioMemoryWord() {}
+    static inline VerilatedVpioMemoryWord* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioMemoryWord*>((VerilatedVpio*)h); }
     virtual const vluint32_t type() { return vpiMemoryWord; }
     virtual const vluint32_t size() { return varp()->range().bits(); }
     virtual const VerilatedRange* range() { return &(varp()->range()); }
@@ -591,12 +591,12 @@ vpiHandle vpi_handle_by_index(vpiHandle object, PLI_INT32 indx) {
 	if (varop->varp()->dims()<2) return 0;
 	if (VL_LIKELY(varop->varp()->array().lhs() >= varop->varp()->array().rhs())) {
 	    if (VL_UNLIKELY(indx > varop->varp()->array().lhs() || indx < varop->varp()->array().rhs())) return 0;
-	    return (new VerilatedVpioVarIndex(varop->varp(), varop->scopep(), indx,
+	    return (new VerilatedVpioMemoryWord(varop->varp(), varop->scopep(), indx,
 					      indx - varop->varp()->array().rhs()))
 		->castVpiHandle();
 	} else {
 	    if (VL_UNLIKELY(indx < varop->varp()->array().lhs() || indx > varop->varp()->array().rhs())) return 0;
-	    return (new VerilatedVpioVarIndex(varop->varp(), varop->scopep(), indx,
+	    return (new VerilatedVpioMemoryWord(varop->varp(), varop->scopep(), indx,
 					      indx - varop->varp()->array().lhs()))
 		->castVpiHandle();
 	}
@@ -630,7 +630,7 @@ vpiHandle vpi_handle(PLI_INT32 type, vpiHandle object) {
 	return (new VerilatedVpioScope(vop->scopep()))->castVpiHandle();
     }
     case vpiParent: {
-	VerilatedVpioVarIndex* vop = VerilatedVpioVarIndex::castp(object);
+	VerilatedVpioMemoryWord* vop = VerilatedVpioMemoryWord::castp(object);
 	if (VL_UNLIKELY(!vop)) return 0;
 	return (new VerilatedVpioVar(vop->varp(), vop->scopep()))->castVpiHandle();
     }
