@@ -348,6 +348,7 @@ sub new {
 	iv => 0,
 	iv_flags => [split(/\s+/,"+define+iverilog -o $self->{obj_dir}/simiv")],
 	iv_flags2 => [],  # Overridden in some sim files
+        iv_pli => 0, # need to compile pli
 	iv_run_flags => [],
 	# VCS
 	vcs => 0,

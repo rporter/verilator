@@ -5,7 +5,7 @@
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
 
-`ifdef VERILATOR
+`ifdef USE_VPI_NOT_DPI
 //We call it via $c so we can verify DPI isn't required - see bug572
 `else
 import "DPI-C" context function integer mon_check();
@@ -25,18 +25,21 @@ extern "C" int mon_check();
    input clk;
 
    reg [31:0] mem0 [1:16] /*verilator public_flat_rw @(posedge clk) */;
-
-   integer 	  status;
+   integer 	  i, status;
 
    // Test loop
    initial begin
 `ifdef VERILATOR
       status = $c32("mon_check()");
-`else
-      status = mon_check();
 `endif
-      for (integer i = 16; i > 0; i--)
-	if (mem0[i] != i) $write("%%Error: %d : GOT = %d  EXP = %d\n", i, mem0[i], i);
+`ifdef iverilog
+     status = $mon_check();
+`endif
+`ifndef USE_VPI_NOT_DPI
+     status = mon_check();
+`endif
+      for (i = 16; i > 0; i--)
+	if (mem0[i] !== i) $write("%%Error: %d : GOT = %d  EXP = %d\n", i, mem0[i], i);
       $write("*-* All Finished *-*\n");
       $finish;
    end
