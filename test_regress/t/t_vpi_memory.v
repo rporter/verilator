@@ -23,8 +23,8 @@ extern "C" int mon_check();
 `endif
 
    input clk;
-
-   reg [31:0] mem0 [1:16] /*verilator public_flat_rw @(posedge clk) */;
+   
+   reg [31:0] mem0 [16:1] /*verilator public_flat_rw @(posedge clk) */;
    integer 	  i, status;
 
    // Test loop

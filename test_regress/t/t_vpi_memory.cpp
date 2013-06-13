@@ -13,6 +13,12 @@
 //
 //*************************************************************************
 
+#ifdef IS_VPI
+
+#include "vpi_user.h"
+
+#else
+
 #include "Vt_vpi_memory.h"
 #include "verilated.h"
 #include "svdpi.h"
@@ -23,7 +29,12 @@
 #include "verilated_vpi.cpp"
 #include "verilated_vcd_c.h"
 
+#endif
+
+#include <stdio.h>
+#include <string.h>
 #include <iostream>
+using namespace std;
 
 // __FILE__ is too long
 #define FILENM "t_vpi_memory.cpp"
@@ -34,14 +45,13 @@ unsigned int main_time = false;
 
 //======================================================================
 
-
 class VlVpiHandle {
     /// For testing, etc, wrap vpiHandle in an auto-releasing class
     vpiHandle m_handle;
 public:
     VlVpiHandle() : m_handle(NULL) { }
     VlVpiHandle(vpiHandle h) : m_handle(h) { }
-    ~VlVpiHandle() { if (m_handle) { vpi_release_handle(m_handle); m_handle=NULL; } }
+    ~VlVpiHandle() { if (m_handle) { vpi_free_object(m_handle); m_handle=NULL; } } // icarus has yet to catch up with 1800-2009
     operator vpiHandle () const { return m_handle; }
     inline VlVpiHandle& operator= (vpiHandle h) { m_handle = h; return *this; }
 };
@@ -128,10 +138,12 @@ int _mon_check_range(VlVpiHandle& handle, int size, int left, int right) {
 
 int _mon_check_memory() {
     int cnt;
-    VlVpiHandle mem_h, iter_h, lcl_h;
+    VlVpiHandle mem_h, lcl_h;
+    vpiHandle iter_h; // icarus does not like auto free of iterator handles
     s_vpi_value value = {
       vpiIntVal
     };
+    vpi_printf("Check memory vpi ...\n");
     mem_h = vpi_handle_by_name((PLI_BYTE8*)"t.mem0", NULL);
     CHECK_RESULT_NZ(mem_h);
     // check type
@@ -157,6 +169,14 @@ int _mon_check_memory() {
       CHECK_RESULT(value.value.integer, cnt);
     }
     CHECK_RESULT(cnt, 16); // should be 16 addresses
+    // don't care for non verilator
+    // (crashes on Icarus)
+    s_vpi_vlog_info info;
+    vpi_get_vlog_info(&info);
+    if (strcmp(info.product, "Verilator") != 0) {
+	vpi_printf("Skipping property checks for simulator %s\n", info.product);
+        return 0; // Ok
+    }
     // make sure trying to get properties that don't exist
     // doesn't crash
     int should_be_0 = vpi_get(vpiSize, iter_h);
@@ -180,7 +200,28 @@ int mon_check() {
 
 //======================================================================
 
+#ifdef IS_VPI
 
+
+static s_vpi_systf_data vpi_systf_data[] = {
+  {vpiSysFunc, vpiSysFunc, (PLI_BYTE8*)"$mon_check", (PLI_INT32(*)(PLI_BYTE8*))mon_check, 0, 0, 0},
+  0
+};
+
+// cver entry
+void vpi_compat_bootstrap(void) {
+  p_vpi_systf_data systf_data_p;
+  systf_data_p = &(vpi_systf_data[0]);
+  while (systf_data_p->type != 0) vpi_register_systf(systf_data_p++);
+}
+
+// icarus entry
+void (*vlog_startup_routines[])() = {
+      vpi_compat_bootstrap,
+      0
+};
+
+#else
 double sc_time_stamp () {
     return main_time;
 }
@@ -232,3 +273,6 @@ int main(int argc, char **argv, char **env) {
     delete topp; topp=NULL;
     exit(0L);
 }
+
+#endif
+
