@@ -534,15 +534,6 @@ sub compile {
 	= $self->{top_shell_filename} = "$self->{obj_dir}/$self->{VM_PREFIX}__top.".$self->v_suffix;
     }
 
-    if ($self->{make_pli} || 1) {
-        $self->oprint("Compile vpi\n");
-        my @cmd = ('g++', @{$param{pli_flags}}, "-DIS_VPI", "$self->{t_dir}/$self->{name}.cpp");
-
-        $self->_run(logfile=>"$self->{obj_dir}/pli_compile.log",
-    	    fails=>$param{fails},
-    	    cmd=>\@cmd);
-    }
-
     if ($param{atsim}) {
 	$self->_make_top();
 	$self->_run(logfile=>"$self->{obj_dir}/atsim_compile.log",
@@ -670,6 +661,16 @@ sub compile {
     else {
 	$self->error("No compile step for this simulator");
     }
+
+    if ($param{make_pli}) {
+        $self->oprint("Compile vpi\n");
+        my @cmd = ('g++', @{$param{pli_flags}}, "-DIS_VPI", "$self->{t_dir}/$self->{name}.cpp");
+
+        $self->_run(logfile=>"$self->{obj_dir}/pli_compile.log",
+    	    fails=>$param{fails},
+    	    cmd=>\@cmd);
+    }
+
     return 1;
 }
 

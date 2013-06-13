@@ -143,7 +143,7 @@ int _mon_check_memory() {
     s_vpi_value value = {
       vpiIntVal
     };
-    vpi_printf("Check memory vpi ...\n");
+    vpi_printf((PLI_BYTE8*)"Check memory vpi ...\n");
     mem_h = vpi_handle_by_name((PLI_BYTE8*)"t.mem0", NULL);
     CHECK_RESULT_NZ(mem_h);
     // check type
@@ -174,7 +174,7 @@ int _mon_check_memory() {
     s_vpi_vlog_info info;
     vpi_get_vlog_info(&info);
     if (strcmp(info.product, "Verilator") != 0) {
-	vpi_printf("Skipping property checks for simulator %s\n", info.product);
+	vpi_printf((PLI_BYTE8*)"Skipping property checks for simulator %s\n", info.product);
         return 0; // Ok
     }
     // make sure trying to get properties that don't exist
