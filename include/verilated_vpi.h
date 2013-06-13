@@ -624,6 +624,11 @@ vpiHandle vpi_handle(PLI_INT32 type, vpiHandle object) {
 	if (VL_UNLIKELY(!vop->range())) return 0;
         return (new VerilatedVpioConst(vop->range()->rhs()))->castVpiHandle();
     }
+    case vpiIndex: {
+	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
+	if (VL_UNLIKELY(!vop)) return 0;
+        return (new VerilatedVpioConst(vop->index()))->castVpiHandle();
+    }
     case vpiScope: {
 	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
 	if (VL_UNLIKELY(!vop)) return 0;
@@ -721,11 +726,6 @@ PLI_INT32 vpi_get(PLI_INT32 property, vpiHandle object) {
 	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
 	if (VL_UNLIKELY(!vop)) return 0;
 	return vop->size();
-    }
-    case vpiIndex: {
-	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
-	if (VL_UNLIKELY(!vop)) return 0;
-	return vop->index();
     }
     default:
         _VL_VPI_WARNING(__FILE__, __LINE__, "%s: Unsupported type %s, nothing will be returned",
