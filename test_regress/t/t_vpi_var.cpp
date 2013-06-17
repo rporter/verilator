@@ -13,6 +13,12 @@
 //
 //*************************************************************************
 
+#ifdef IS_VPI
+
+#include "vpi_user.h"
+
+#else
+
 #include "Vt_vpi_var.h"
 #include "verilated.h"
 #include "svdpi.h"
@@ -23,7 +29,13 @@
 #include "verilated_vpi.cpp"
 #include "verilated_vcd_c.h"
 
+#endif
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <iostream>
+using namespace std;
 
 // __FILE__ is too long
 #define FILENM "t_vpi_var.cpp"
@@ -36,6 +48,8 @@ unsigned int callback_count_half = false;
 unsigned int callback_count_quad = false;
 unsigned int callback_count_strs = false;
 unsigned int callback_count_strs_max = 500;
+bool is_verilator;
+s_vpi_vlog_info info;
 
 //======================================================================
 
@@ -46,7 +60,7 @@ class VlVpiHandle {
 public:
     VlVpiHandle() : m_handle(NULL) { }
     VlVpiHandle(vpiHandle h) : m_handle(h) { }
-    ~VlVpiHandle() { if (m_handle) { vpi_release_handle(m_handle); m_handle=NULL; } }
+    ~VlVpiHandle() { if (m_handle) { vpi_free_object(m_handle); m_handle=NULL; } } // icarus has yet to catch up with 1800-2009
     operator vpiHandle () const { return m_handle; }
     inline VlVpiHandle& operator= (vpiHandle h) { m_handle = h; return *this; }
 };
@@ -90,6 +104,22 @@ public:
 
 #define CHECK_RESULT_CSTR_STRIP(got, exp) \
     CHECK_RESULT_CSTR(got+strspn(got, " "), exp)
+
+// return test level scope
+const char *top() {
+    if (is_verilator) {
+	return "t";
+    } else {
+	return "top.t";
+    }
+}
+
+// return absolute scope of obj
+const char *prepend(const char *obj) {
+    static char buf[256];
+    snprintf(buf, sizeof(buf), "%s.%s", top(), obj);
+    return buf;
+}
 
 int _mon_check_mcd() {
     PLI_INT32 status;
@@ -158,7 +188,7 @@ int _value_callback_quad(p_cb_data cb_data) {
 }
 
 int _mon_check_value_callbacks() {
-    vpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.count", NULL);
+    vpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)prepend("count"), NULL);
     CHECK_RESULT_NZ(vh1);
 
     s_vpi_value v;
@@ -174,7 +204,7 @@ int _mon_check_value_callbacks() {
     vpiHandle vh = vpi_register_cb(&cb_data);
     CHECK_RESULT_NZ(vh);
 
-    vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.half_count", NULL);
+    vh1 = vpi_handle_by_name((PLI_BYTE8*)prepend("half_count"), NULL);
     CHECK_RESULT_NZ(vh1);
 
     cb_data.obj = vh1;
@@ -183,7 +213,7 @@ int _mon_check_value_callbacks() {
     vh = vpi_register_cb(&cb_data);
     CHECK_RESULT_NZ(vh);
 
-    vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.quads", NULL);
+    vh1 = vpi_handle_by_name((PLI_BYTE8*)prepend("quads"), NULL);
     CHECK_RESULT_NZ(vh1);
 
     v.format = vpiVectorVal;
@@ -205,10 +235,10 @@ int _mon_check_value_callbacks() {
 }
 
 int _mon_check_var() {
-    VlVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.onebit", NULL);
+    VlVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)prepend("onebit"), NULL);
     CHECK_RESULT_NZ(vh1);
 
-    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)"t", NULL);
+    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)top(), NULL);
     CHECK_RESULT_NZ(vh2);
 
     // scope attributes
@@ -216,7 +246,7 @@ int _mon_check_var() {
     p = vpi_get_str(vpiName, vh2);
     CHECK_RESULT_CSTR(p, "t");
     p = vpi_get_str(vpiFullName, vh2);
-    CHECK_RESULT_CSTR(p, "t");
+    CHECK_RESULT_CSTR(p, top());
 
     VlVpiHandle vh3 = vpi_handle_by_name((PLI_BYTE8*)"onebit", vh2);
     CHECK_RESULT_NZ(vh3);
@@ -225,18 +255,21 @@ int _mon_check_var() {
     PLI_INT32 d;
     d = vpi_get(vpiType, vh3);
     CHECK_RESULT(d, vpiReg);
-    d = vpi_get(vpiDirection, vh3);
-    CHECK_RESULT(d, vpiNoDirection);
-    d = vpi_get(vpiVector, vh3);
-    CHECK_RESULT(d, 0);
+    if (is_verilator) {
+      // not convinced non ports have vpiDirection
+      d = vpi_get(vpiDirection, vh3);
+      CHECK_RESULT(d, vpiNoDirection);
+      d = vpi_get(vpiVector, vh3);
+      CHECK_RESULT(d, 0);
+    }
 
     p = vpi_get_str(vpiName, vh3);
     CHECK_RESULT_CSTR(p, "onebit");
     p = vpi_get_str(vpiFullName, vh3);
-    CHECK_RESULT_CSTR(p, "t.onebit");
+    CHECK_RESULT_CSTR(p, prepend("onebit"));
 
     // array attributes
-    VlVpiHandle vh4 = vpi_handle_by_name((PLI_BYTE8*)"t.fourthreetwoone", NULL);
+    VlVpiHandle vh4 = vpi_handle_by_name((PLI_BYTE8*)prepend("fourthreetwoone"), NULL);
     CHECK_RESULT_NZ(vh4);
     d = vpi_get(vpiVector, vh4);
     CHECK_RESULT(d, 1);
@@ -276,7 +309,7 @@ int _mon_check_var() {
 int _mon_check_varlist() {
     const char* p;
 
-    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)"t.sub", NULL);
+    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)prepend("sub"), NULL);
     CHECK_RESULT_NZ(vh2);
 
     VlVpiHandle vh10 = vpi_iterate(vpiReg, vh2);
@@ -285,12 +318,12 @@ int _mon_check_varlist() {
     VlVpiHandle vh11 = vpi_scan(vh10);
     CHECK_RESULT_NZ(vh11);
     p = vpi_get_str(vpiFullName, vh11);
-    CHECK_RESULT_CSTR(p, "t.sub.subsig1");
+    CHECK_RESULT_CSTR(p, prepend("sub.subsig1"));
 
     VlVpiHandle vh12 = vpi_scan(vh10);
     CHECK_RESULT_NZ(vh12);
     p = vpi_get_str(vpiFullName, vh12);
-    CHECK_RESULT_CSTR(p, "t.sub.subsig2");
+    CHECK_RESULT_CSTR(p, prepend("sub.subsig2"));
 
     VlVpiHandle vh13 = vpi_scan(vh10);
     CHECK_RESULT(vh13,0);
@@ -299,7 +332,7 @@ int _mon_check_varlist() {
 }
 
 int _mon_check_getput() {
-    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)"t.onebit", NULL);
+    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)prepend("onebit"), NULL);
     CHECK_RESULT_NZ(vh2);
 
     s_vpi_value v;
@@ -321,7 +354,7 @@ int _mon_check_getput() {
 }
 
 int _mon_check_quad() {
-    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)"t.quads", NULL);
+    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)prepend("quads"), NULL);
     CHECK_RESULT_NZ(vh2);
 
     s_vpi_value v;
@@ -366,15 +399,15 @@ int _mon_check_string() {
         const char *initial;
         const char *value;
     } text_test_obs[] = {
-        {"t.text_byte", "B", "xxA"}, // x's dropped
-        {"t.text_half", "Hf", "xxT2"}, // x's dropped
-        {"t.text_word", "Word", "Tree"},
-        {"t.text_long", "Long64b", "44Four44"},
-        {"t.text"     , "Verilog Test module", "lorem ipsum"},
+        {"text_byte", "B", "xxA"}, // x's dropped
+        {"text_half", "Hf", "xxT2"}, // x's dropped
+        {"text_word", "Word", "Tree"},
+        {"text_long", "Long64b", "44Four44"},
+        {"text"     , "Verilog Test module", "lorem ipsum"},
     };
 
     for (int i=0; i<5; i++) {
-      VlVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)text_test_obs[i].name, NULL);
+	VlVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)prepend(text_test_obs[i].name), NULL);
       CHECK_RESULT_NZ(vh1);
 
       s_vpi_value v;
@@ -492,7 +525,7 @@ int _mon_check_putget_str(p_cb_data cb_data) {
 	// setup and install
         for (int i=1; i<=128; i++) {
             char buf[32];
-            snprintf(buf, sizeof(buf), "t.arr[%d].arr", i);
+            snprintf(buf, sizeof(buf), prepend("arr[%d].arr"), i);
 	    CHECK_RESULT_NZ(data[i].scope   = vpi_handle_by_name((PLI_BYTE8*)buf, NULL));
 	    CHECK_RESULT_NZ(data[i].sig     = vpi_handle_by_name((PLI_BYTE8*)"sig", data[i].scope));
 	    CHECK_RESULT_NZ(data[i].rfr     = vpi_handle_by_name((PLI_BYTE8*)"rfr", data[i].scope));
@@ -502,7 +535,7 @@ int _mon_check_putget_str(p_cb_data cb_data) {
 
 	static t_cb_data cb_data;
 	static s_vpi_value v;
-        static VlVpiHandle count_h = vpi_handle_by_name((PLI_BYTE8*)"t.count", NULL);
+        static VlVpiHandle count_h = vpi_handle_by_name((PLI_BYTE8*)prepend("count"), NULL);
 
         cb_data.reason = cbValueChange;
         cb_data.cb_rtn = _mon_check_putget_str; // this function
@@ -524,11 +557,14 @@ int _mon_check_vlog_info() {
     CHECK_RESULT_CSTR(vlog_info.argv[1], "+PLUS");
     CHECK_RESULT_CSTR(vlog_info.argv[2], "+INT=1234");
     CHECK_RESULT_CSTR(vlog_info.argv[3], "+STRSTR");
-    CHECK_RESULT_CSTR(vlog_info.product, "Verilator");
-    CHECK_RESULT(strlen(vlog_info.version) > 0, 1);
-
+    if (is_verilator) {
+      CHECK_RESULT_CSTR(vlog_info.product, "Verilator");
+      CHECK_RESULT(strlen(vlog_info.version) > 0, 1);
+    }
     return 0;
 }
+
+#ifndef IS_VPI
 
 #define CHECK_ENUM_STR(fn, enum) \
     do { \
@@ -567,8 +603,13 @@ int _mon_check_vl_str() {
     return 0;
 }
 
+#endif
+
 int mon_check() {
+    vpi_get_vlog_info(&info);
+    is_verilator = strcmp(info.product, "Verilator") == 0;
     // Callback from initial block in monitor
+/*
     if (int status = _mon_check_mcd()) return status;
     if (int status = _mon_check_callbacks()) return status;
     if (int status = _mon_check_value_callbacks()) return status;
@@ -578,13 +619,37 @@ int mon_check() {
     if (int status = _mon_check_quad()) return status;
     if (int status = _mon_check_string()) return status;
     if (int status = _mon_check_putget_str(NULL)) return status;
+*/
     if (int status = _mon_check_vlog_info()) return status;
+#ifndef IS_VPI
     if (int status = _mon_check_vl_str()) return status;
+#endif
     return 0; // Ok
 }
 
 //======================================================================
 
+#ifdef IS_VPI
+
+static s_vpi_systf_data vpi_systf_data[] = {
+  {vpiSysFunc, vpiSysFunc, (PLI_BYTE8*)"$mon_check", (PLI_INT32(*)(PLI_BYTE8*))mon_check, 0, 0, 0},
+  0
+};
+
+// cver entry
+void vpi_compat_bootstrap(void) {
+  p_vpi_systf_data systf_data_p;
+  systf_data_p = &(vpi_systf_data[0]);
+  while (systf_data_p->type != 0) vpi_register_systf(systf_data_p++);
+}
+
+// icarus entry
+void (*vlog_startup_routines[])() = {
+      vpi_compat_bootstrap,
+      0
+};
+
+#else
 
 double sc_time_stamp () {
     return main_time;
@@ -640,3 +705,5 @@ int main(int argc, char **argv, char **env) {
     delete topp; topp=NULL;
     exit(0L);
 }
+
+#endif

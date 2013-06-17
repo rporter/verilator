@@ -1211,7 +1211,7 @@ sub _make_top_v {
     print $fh "   initial begin\n";
     print $fh "      \$display(\"-Tracing Waves to Dumpfile: $self->{vcd_filename}\");\n";
     print $fh "      \$dumpfile(\"$self->{vcd_filename}\");\n";
-    print $fh "      \$dumpvars(12, t);\n";
+    print $fh "      \$dumpvars(0, top);\n";
     print $fh "   end\n";
     print $fh "`endif\n";
 

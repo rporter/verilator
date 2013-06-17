@@ -42,6 +42,8 @@ using namespace std;
 #define DEBUG if (0) printf
 
 unsigned int main_time = false;
+bool is_verilator;
+s_vpi_vlog_info info;
 
 //======================================================================
 
@@ -103,6 +105,22 @@ typedef struct range {
     int right;
 } range_s, *range_p;
 
+// return test level scope
+const char *top() {
+    if (is_verilator) {
+	return "t";
+    } else {
+	return "top.t";
+    }
+}
+
+// return absolute scope of obj
+const char *prepend(const char *obj) {
+    static char buf[256];
+    snprintf(buf, sizeof(buf), "%s.%s", top(), obj);
+    return buf;
+}
+
 int _mon_check_range(VlVpiHandle& handle, int size, int left, int right) {
     VlVpiHandle iter_h, rng_h, left_h, right_h;
     s_vpi_value value = {
@@ -144,7 +162,7 @@ int _mon_check_memory() {
       vpiIntVal
     };
     vpi_printf((PLI_BYTE8*)"Check memory vpi ...\n");
-    mem_h = vpi_handle_by_name((PLI_BYTE8*)"t.mem0", NULL);
+    mem_h = vpi_handle_by_name((PLI_BYTE8*)prepend("mem0"), NULL);
     CHECK_RESULT_NZ(mem_h);
     // check type
     int vpitype = vpi_get(vpiType, mem_h);
@@ -171,9 +189,7 @@ int _mon_check_memory() {
     CHECK_RESULT(cnt, 16); // should be 16 addresses
     // don't care for non verilator
     // (crashes on Icarus)
-    s_vpi_vlog_info info;
-    vpi_get_vlog_info(&info);
-    if (strcmp(info.product, "Verilator") != 0) {
+    if (!is_verilator) {
 	vpi_printf((PLI_BYTE8*)"Skipping property checks for simulator %s\n", info.product);
         return 0; // Ok
     }
@@ -193,6 +209,8 @@ int _mon_check_memory() {
 }
 
 int mon_check() {
+    vpi_get_vlog_info(&info);
+    is_verilator = strcmp(info.product, "Verilator") == 0;
     // Callback from initial block in monitor
     if (int status = _mon_check_memory()) return status;
     return 0; // Ok
@@ -201,7 +219,6 @@ int mon_check() {
 //======================================================================
 
 #ifdef IS_VPI
-
 
 static s_vpi_systf_data vpi_systf_data[] = {
   {vpiSysFunc, vpiSysFunc, (PLI_BYTE8*)"$mon_check", (PLI_INT32(*)(PLI_BYTE8*))mon_check, 0, 0, 0},
@@ -222,6 +239,7 @@ void (*vlog_startup_routines[])() = {
 };
 
 #else
+
 double sc_time_stamp () {
     return main_time;
 }
