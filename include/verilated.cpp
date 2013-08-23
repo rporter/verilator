@@ -769,6 +769,14 @@ void VL_SFORMAT_X(int obits, void* destp, const char* formatp, ...) {
     _VL_STRING_TO_VINT(obits, destp, (int)output.length(), output.c_str());
 }
 
+void VL_SFORMAT_X(int obits_ignored, string &output, const char* formatp, ...) {
+    output = "";
+    va_list ap;
+    va_start(ap,formatp);
+    _vl_vsformat(output, formatp, ap);
+    va_end(ap);
+}
+
 string VL_SFORMATF_NX(const char* formatp, ...) {
     VL_STATIC_OR_THREAD string output;  // static only for speed
     output = "";
@@ -1114,7 +1122,7 @@ vluint32_t VerilatedVar::entSize() const {
     case VLVT_UINT16:	size=sizeof(SData); break;
     case VLVT_UINT32:	size=sizeof(IData); break;
     case VLVT_UINT64:	size=sizeof(QData); break;
-    case VLVT_WDATA:	size=VL_WORDS_I(range().bits())*sizeof(IData); break;
+    case VLVT_WDATA:	size=VL_WORDS_I(range().elements())*sizeof(IData); break;
     default:		size=0; break;
     }
     return size;
@@ -1186,11 +1194,11 @@ void VerilatedScope::varInsert(int finalize, const char* namep, void* datap,
 	int msb = va_arg(ap,int);
 	int lsb = va_arg(ap,int);
 	if (i==0) {
-	    var.m_range.m_lhs = msb;
-	    var.m_range.m_rhs = lsb;
+	    var.m_range.m_left = msb;
+	    var.m_range.m_right = lsb;
 	} else if (i==1) {
-	    var.m_array.m_lhs = msb;
-	    var.m_array.m_rhs = lsb;
+	    var.m_array.m_left = msb;
+	    var.m_array.m_right = lsb;
 	} else {
 	    // We could have a linked list of ranges, but really this whole thing needs
 	    // to be generalized to support structs and unions, etc.
