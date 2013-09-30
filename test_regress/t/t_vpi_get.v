@@ -16,8 +16,8 @@ module t (/*AUTOARG*/
    input clk                          	/*verilator public_flat_rd		  */,
 
    // test ports
-   input  [61:0][3:2] 	quads0	/*verilator public_flat_rd		  */,
-   output [61:0][2:1] 	quads1	/*verilator public_flat_rw @(posedge clk) */
+   input  [15:0] 	testin  	/*verilator public_flat_rd		  */,
+   output [23:0] 	testout 	/*verilator public_flat_rw @(posedge clk) */
 
    );
 
@@ -29,10 +29,15 @@ extern "C" int mon_check();
 
    reg		onebit		/*verilator public_flat_rw @(posedge clk) */;
    reg [2:1]	twoone		/*verilator public_flat_rw @(posedge clk) */;
-//   reg [1:2]	onetwo		/*verilator public_flat_rw @(posedge clk) */;
+   reg   	onetwo [1:2]	/*verilator public_flat_rw @(posedge clk) */;
    reg [2:1] 	fourthreetwoone[4:3] /*verilator public_flat_rw @(posedge clk) */;
 
    integer      status;
+
+`ifdef iverilog
+   // stop icarus optimizing signals away
+   wire 	redundant = onebit | onetwo[1] | twoone | fourthreetwoone[3];
+`endif
 
    // Test loop
    initial begin

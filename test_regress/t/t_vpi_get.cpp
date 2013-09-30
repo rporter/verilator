@@ -16,7 +16,7 @@
 #ifdef IS_VPI
 
 #include "vpi_user.h"
-#include "stdlib.h"
+#include <cstdlib>
 
 #else
 
@@ -37,6 +37,8 @@
 #include <iostream>
 using namespace std;
 
+#include "simulator.h"
+
 // __FILE__ is too long
 #define FILENM "t_vpi_var.cpp"
 
@@ -50,12 +52,17 @@ unsigned int main_time = false;
 class VlVpiHandle {
     /// For testing, etc, wrap vpiHandle in an auto-releasing class
     vpiHandle m_handle;
+    bool      m_free;
 public:
-    VlVpiHandle() : m_handle(NULL) { }
-    VlVpiHandle(vpiHandle h) : m_handle(h) { }
-    ~VlVpiHandle() { if (m_handle) { vpi_release_handle(m_handle); m_handle=NULL; } }
+    VlVpiHandle() : m_handle(NULL), m_free(true) { }
+    VlVpiHandle(vpiHandle h) : m_handle(h), m_free(true) { }
+    ~VlVpiHandle() { if (m_handle && m_free) { vpi_free_object(m_handle); m_handle=NULL; } } // icarus has yet to catch up with 1800-2009
     operator vpiHandle () const { return m_handle; }
     inline VlVpiHandle& operator= (vpiHandle h) { m_handle = h; return *this; }
+    VlVpiHandle& nofree() {
+	m_free = false;
+        return *this;
+    }
 };
 
 //======================================================================
@@ -99,19 +106,21 @@ public:
     CHECK_RESULT_CSTR(got+strspn(got, " "), exp)
 
 static int _mon_check_props(VlVpiHandle& handle, int size, int direction, int scalar, int type) {
-    VlVpiHandle iter_h, left_h, right_h;
     s_vpi_value value = {
       vpiIntVal
     };
     // check size of object
     int vpisize = vpi_get(vpiSize, handle);
     CHECK_RESULT(vpisize, size);
-    return 0;
-    int vpiscalar = vpi_get(vpiScalar, handle);
-    CHECK_RESULT(vpiscalar, scalar);
-    int vpivector = vpi_get(vpiVector, handle);
-    CHECK_RESULT(vpivector, !scalar);
-    if (vpivector) {
+
+    if (!simulator::instance().get().icarus) {
+      VlVpiHandle left_h, right_h;
+
+      int vpiscalar = vpi_get(vpiScalar, handle);
+      CHECK_RESULT((bool)vpiscalar, (bool)scalar);
+      int vpivector = vpi_get(vpiVector, handle);
+      CHECK_RESULT((bool)vpivector, (bool)!scalar);
+
       // check coherency for vectors
       // get left hand side of range
       left_h = vpi_handle(vpiLeftRange, handle);
@@ -122,16 +131,18 @@ static int _mon_check_props(VlVpiHandle& handle, int size, int direction, int sc
       right_h = vpi_handle(vpiRightRange, handle);
       CHECK_RESULT_NZ(right_h);
       vpi_get_value(right_h, &value);
-      printf("%d:%d\n",coherency, value.value.integer); 
+      TEST_MSG("%d:%d\n",coherency, value.value.integer); 
       coherency -= value.value.integer;
       // calculate size & check
       coherency = abs(coherency) + 1;
       CHECK_RESULT(coherency, size);
     }
 
-    // check direction of object
-    int vpidir = vpi_get(vpiDirection, handle);
-    CHECK_RESULT(vpidir, direction);
+    if (!(simulator::instance().get().icarus && direction == vpiNoDirection)) {
+      // check direction of object
+      int vpidir = vpi_get(vpiDirection, handle);
+      CHECK_RESULT(vpidir, direction);
+    }
 
     // check type of object
     int vpitype = vpi_get(vpiType, handle);
@@ -140,25 +151,44 @@ static int _mon_check_props(VlVpiHandle& handle, int size, int direction, int sc
     return 0; // Ok
 }
 
+struct params {
+    const char*   signal;
+    struct {
+      unsigned int  size;
+      unsigned int  direction;
+      unsigned int  scalar;
+      unsigned int  type;
+    } attributes, children;
+} values[] = {
+    {"onebit", {1, vpiNoDirection, 1, vpiReg}, {0, 0, 0, 0}},
+    {"twoone", {2, vpiNoDirection, 0, vpiReg}, {0, 0, 0, 0}},
+    {"onetwo", {2, vpiNoDirection, 0, simulator::instance().get().verilator?vpiReg:vpiMemory}, {0, 0, 0, 0}},
+    {"fourthreetwoone", {2, vpiNoDirection, 0, vpiMemory}, {2, vpiNoDirection, 0, vpiMemoryWord}},
+    {"clk", {1, vpiInput, 1, vpiPort}, {0, 0, 0, 0}},
+    {"testin", {16, vpiInput, 0, vpiPort}, {0, 0, 0, 0}},
+    {"testout", {24, vpiOutput, 0, vpiPort}, {0, 0, 0, 0}},
+    {NULL, 0, 0, 0, 0}
+};
+
 int mon_check_props() {
-    VlVpiHandle onebit_h = vpi_handle_by_name((PLI_BYTE8*)"t.onebit", NULL);
-      CHECK_RESULT_NZ(onebit_h);
-    if (int status = _mon_check_props(onebit_h, 1, vpiNoDirection, 1, vpiReg)) return status;
-    VlVpiHandle twoone_h = vpi_handle_by_name((PLI_BYTE8*)"t.twoone", NULL);
-    if (int status = _mon_check_props(twoone_h, 2, vpiNoDirection, 0, vpiReg)) return status;
-    VlVpiHandle fourthreetwoone_h = vpi_handle_by_name((PLI_BYTE8*)"t.fourthreetwoone", NULL);
-    if (int status = _mon_check_props(fourthreetwoone_h, 2, vpiNoDirection, 0, vpiMemory)) return status;
-    VlVpiHandle iter_h = vpi_iterate(vpiMemoryWord, fourthreetwoone_h);
-    while (VlVpiHandle word_h = vpi_scan(iter_h)) {
-      // check size and range
-      if (int status = _mon_check_props(word_h, 2, vpiNoDirection, 0, vpiMemoryWord)) return status;
+    struct params* value = values;
+    while (value->signal) {
+      VlVpiHandle h = VPI_HANDLE(value->signal);
+      CHECK_RESULT_NZ(h);
+      TEST_MSG("%s\n", value->signal);
+      if (int status = _mon_check_props(h, value->attributes.size, value->attributes.direction, value->attributes.scalar, value->attributes.type)) return status;
+      if (value->children.size) {
+        int size = 0;
+        VlVpiHandle iter_h = vpi_iterate(vpiMemoryWord, h);
+        while (VlVpiHandle word_h = vpi_scan(iter_h.nofree())) {
+          // check size and range
+          if (int status = _mon_check_props(word_h, value->children.size, value->children.direction, value->children.scalar, value->children.type)) return status;
+          size++;
+        }
+        CHECK_RESULT(size, value->attributes.size);
+      }
+      value++;
     }
-      printf("clk\n"); 
-    VlVpiHandle clk_h = vpi_handle_by_name((PLI_BYTE8*)"t.clk", NULL);
-      if (int status = _mon_check_props(clk_h, 1, vpiInput, 1, vpiReg)) return status;
-      printf("quads0\n"); 
-    VlVpiHandle quads0_h = vpi_handle_by_name((PLI_BYTE8*)"t.quads0", NULL);
-    if (int status = _mon_check_props(quads0_h, 2, vpiInput, 0, vpiMemory)) return status;
     return 0;
 }
 

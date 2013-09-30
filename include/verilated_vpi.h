@@ -140,7 +140,7 @@ public:
     virtual ~VerilatedVpioRange() {}
     static inline VerilatedVpioRange* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioRange*>((VerilatedVpio*)h); }
     virtual const vluint32_t type() { return vpiRange; }
-    virtual const vluint32_t size() const { return m_range->bits(); }
+    virtual const vluint32_t size() const { return m_range->elements(); }
     virtual const VerilatedRange* range() const { return m_range; }
     int iteration() const { return m_iteration; }
     void iterationInc() { ++m_iteration; }
@@ -180,7 +180,7 @@ class VerilatedVpioVar : public VerilatedVpio {
 protected:
     void*			m_varDatap;	// varp()->datap() adjusted for array entries
     vlsint32_t			m_index;
-    const VerilatedRange&       get_range() { return m_varp->dims()?m_varp->array():m_varp->range(); }
+    const VerilatedRange&       get_range() { return (m_varp->dims()>1)?m_varp->array():m_varp->range(); }
 public:
     VerilatedVpioVar(const VerilatedVar* varp, const VerilatedScope* scopep)
 	: m_varp(varp), m_scopep(scopep), m_index(0) {
@@ -199,8 +199,11 @@ public:
     vluint8_t mask_byte(int idx) { return m_mask.u8[idx & 3]; }
     vluint32_t entSize() const { return m_entSize; }
     const vluint32_t index() { return m_index; }
-    virtual const vluint32_t type() { return (varp()->dims()>1) ? vpiMemory : vpiReg; /* but might be wire, logic */ }
-    virtual const vluint32_t size() { return m_varp->range().elements(); }
+    virtual const vluint32_t type() {
+      if (varp()->vldir() != vpiNoDirection) return vpiPort;
+      return (varp()->dims()>1) ? vpiMemory : vpiReg; /* but might be wire, logic, port */
+    }
+    virtual const vluint32_t size() { return get_range().elements(); }
     virtual const VerilatedRange* range() { return &(get_range()); }
     virtual const char* name() { return m_varp->name(); }
     virtual const char* fullname() {
@@ -229,7 +232,7 @@ public:
     virtual ~VerilatedVpioMemoryWord() {}
     static inline VerilatedVpioMemoryWord* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioMemoryWord*>((VerilatedVpio*)h); }
     virtual const vluint32_t type() { return vpiMemoryWord; }
-    virtual const vluint32_t size() { return varp()->range().bits(); }
+    virtual const vluint32_t size() { return varp()->range().elements(); }
     virtual const VerilatedRange* range() { return &(varp()->range()); }
     virtual const char* fullname() {
 	VL_STATIC_OR_THREAD string out;
@@ -271,11 +274,11 @@ class VerilatedVpioMemoryWordIter : public VerilatedVpio {
     bool                        m_done;
 public:
     VerilatedVpioMemoryWordIter(const vpiHandle handle, const VerilatedVar* varp)
-	: m_handle(handle), m_varp(varp), m_iteration(varp->array().rhs()), m_direction(VL_LIKELY(varp->array().lhs()>varp->array().rhs())?1:-1), m_done(false) {  }
+	: m_handle(handle), m_varp(varp), m_iteration(varp->array().right()), m_direction(VL_LIKELY(varp->array().left()>varp->array().right())?1:-1), m_done(false) {  }
     virtual ~VerilatedVpioMemoryWordIter() {}
     static inline VerilatedVpioMemoryWordIter* castp(vpiHandle h) { return dynamic_cast<VerilatedVpioMemoryWordIter*>((VerilatedVpio*)h); }
     virtual const vluint32_t type() { return vpiIterator; }
-    void iterationInc() { if (!(m_done = m_iteration == m_varp->array().lhs())) m_iteration+=m_direction; }
+    void iterationInc() { if (!(m_done = m_iteration == m_varp->array().left())) m_iteration+=m_direction; }
     virtual vpiHandle dovpi_scan() {
         vpiHandle result;
 	if (m_done) {
@@ -589,15 +592,15 @@ vpiHandle vpi_handle_by_index(vpiHandle object, PLI_INT32 indx) {
     _VL_VPI_ERROR_RESET(); // reset vpi error status
     if (VL_LIKELY(varop)) {
 	if (varop->varp()->dims()<2) return 0;
-	if (VL_LIKELY(varop->varp()->array().lhs() >= varop->varp()->array().rhs())) {
-	    if (VL_UNLIKELY(indx > varop->varp()->array().lhs() || indx < varop->varp()->array().rhs())) return 0;
+	if (VL_LIKELY(varop->varp()->array().left() >= varop->varp()->array().right())) {
+	    if (VL_UNLIKELY(indx > varop->varp()->array().left() || indx < varop->varp()->array().right())) return 0;
 	    return (new VerilatedVpioMemoryWord(varop->varp(), varop->scopep(), indx,
-					      indx - varop->varp()->array().rhs()))
+					      indx - varop->varp()->array().right()))
 		->castVpiHandle();
 	} else {
-	    if (VL_UNLIKELY(indx < varop->varp()->array().lhs() || indx > varop->varp()->array().rhs())) return 0;
+	    if (VL_UNLIKELY(indx < varop->varp()->array().left() || indx > varop->varp()->array().right())) return 0;
 	    return (new VerilatedVpioMemoryWord(varop->varp(), varop->scopep(), indx,
-					      indx - varop->varp()->array().lhs()))
+					      indx - varop->varp()->array().left()))
 		->castVpiHandle();
 	}
     } else {
@@ -616,13 +619,13 @@ vpiHandle vpi_handle(PLI_INT32 type, vpiHandle object) {
 	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
 	if (VL_UNLIKELY(!vop)) return 0;
 	if (VL_UNLIKELY(!vop->range())) return 0;
-        return (new VerilatedVpioConst(vop->range()->lhs()))->castVpiHandle();
+        return (new VerilatedVpioConst(vop->range()->left()))->castVpiHandle();
     }
     case vpiRightRange: {
 	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
 	if (VL_UNLIKELY(!vop)) return 0;
 	if (VL_UNLIKELY(!vop->range())) return 0;
-        return (new VerilatedVpioConst(vop->range()->rhs()))->castVpiHandle();
+        return (new VerilatedVpioConst(vop->range()->right()))->castVpiHandle();
     }
     case vpiIndex: {
 	VerilatedVpioVar* vop = VerilatedVpioVar::castp(object);
