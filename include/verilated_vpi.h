@@ -200,7 +200,7 @@ public:
     vluint32_t entSize() const { return m_entSize; }
     const vluint32_t index() { return m_index; }
     virtual const vluint32_t type() { return (varp()->dims()>1) ? vpiMemory : vpiReg; /* but might be wire, logic */ }
-    virtual const vluint32_t size() { return get_range().bits(); }
+    virtual const vluint32_t size() { return m_varp->range().elements(); }
     virtual const VerilatedRange* range() { return &(get_range()); }
     virtual const char* name() { return m_varp->name(); }
     virtual const char* fullname() {

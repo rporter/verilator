@@ -13,7 +13,12 @@ import "DPI-C" context function integer mon_check();
 
 module t (/*AUTOARG*/
    // Inputs
-   clk
+   input clk                          	/*verilator public_flat_rd		  */,
+
+   // test ports
+   input  [61:0][3:2] 	quads0	/*verilator public_flat_rd		  */,
+   output [61:0][2:1] 	quads1	/*verilator public_flat_rw @(posedge clk) */
+
    );
 
 `ifdef VERILATOR
@@ -22,10 +27,12 @@ extern "C" int mon_check();
 `verilog
 `endif
 
-   input clk;
+   reg		onebit		/*verilator public_flat_rw @(posedge clk) */;
+   reg [2:1]	twoone		/*verilator public_flat_rw @(posedge clk) */;
+//   reg [1:2]	onetwo		/*verilator public_flat_rw @(posedge clk) */;
+   reg [2:1] 	fourthreetwoone[4:3] /*verilator public_flat_rw @(posedge clk) */;
 
-   reg [31:0] mem0 [16:1] /*verilator public_flat_rw @(posedge clk) */;
-   integer 	  i, status;
+   integer      status;
 
    // Test loop
    initial begin
@@ -42,17 +49,9 @@ extern "C" int mon_check();
 	 $write("%%Error: t_vpi_var.cpp:%0d: C Test failed\n", status);
 	 $stop;
       end
-      for (i = 16; i > 0; i--)
-	if (mem0[i] !== i) begin
-          $write("%%Error: %d : GOT = %d  EXP = %d\n", i, mem0[i], i);
-	  status = 1;
-        end
-      if (status!=0) begin
-	 $write("%%Error: t_vpi_var.cpp:%0d: C Test failed\n", status);
-	 $stop;
-      end
       $write("*-* All Finished *-*\n");
       $finish;
    end
 
 endmodule : t
+

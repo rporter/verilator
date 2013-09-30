@@ -16,15 +16,15 @@
 #ifdef IS_VPI
 
 #include "vpi_user.h"
-#include <cstdlib>
+#include "stdlib.h"
 
 #else
 
-#include "Vt_vpi_memory.h"
+#include "Vt_vpi_get.h"
 #include "verilated.h"
 #include "svdpi.h"
 
-#include "Vt_vpi_memory__Dpi.h"
+#include "Vt_vpi_get__Dpi.h"
 
 #include "verilated_vpi.h"
 #include "verilated_vpi.cpp"
@@ -38,15 +38,14 @@
 using namespace std;
 
 // __FILE__ is too long
-#define FILENM "t_vpi_memory.cpp"
+#define FILENM "t_vpi_var.cpp"
 
-#define DEBUG if (0) printf
+#define TEST_MSG if (0) printf
 
 unsigned int main_time = false;
-bool is_verilator;
-s_vpi_vlog_info info;
 
 //======================================================================
+
 
 class VlVpiHandle {
     /// For testing, etc, wrap vpiHandle in an auto-releasing class
@@ -54,7 +53,7 @@ class VlVpiHandle {
 public:
     VlVpiHandle() : m_handle(NULL) { }
     VlVpiHandle(vpiHandle h) : m_handle(h) { }
-    ~VlVpiHandle() { if (m_handle) { vpi_free_object(m_handle); m_handle=NULL; } } // icarus has yet to catch up with 1800-2009
+    ~VlVpiHandle() { if (m_handle) { vpi_release_handle(m_handle); m_handle=NULL; } }
     operator vpiHandle () const { return m_handle; }
     inline VlVpiHandle& operator= (vpiHandle h) { m_handle = h; return *this; }
 };
@@ -76,14 +75,14 @@ public:
 
 // Use cout to avoid issues with %d/%lx etc
 #define CHECK_RESULT(got, exp) \
-    if ((got != exp)) { \
+    if ((got) != (exp)) {			     \
 	cout<<dec<<"%Error: "<<FILENM<<":"<<__LINE__ \
 	   <<": GOT = "<<(got)<<"   EXP = "<<(exp)<<endl;	\
 	return __LINE__; \
     }
 
 #define CHECK_RESULT_HEX(got, exp) \
-    if ((got != exp)) { \
+    if ((got) != (exp)) {				  \
 	cout<<dec<<"%Error: "<<FILENM<<":"<<__LINE__<<hex \
 	   <<": GOT = "<<(got)<<"   EXP = "<<(exp)<<endl;	\
 	return __LINE__; \
@@ -99,30 +98,7 @@ public:
 #define CHECK_RESULT_CSTR_STRIP(got, exp) \
     CHECK_RESULT_CSTR(got+strspn(got, " "), exp)
 
-// ideally we should be able to iterate on vpiRange against a list of this struct
-typedef struct range {
-    int size;
-    int left;
-    int right;
-} range_s, *range_p;
-
-// return test level scope
-const char *top() {
-    if (is_verilator) {
-	return "t";
-    } else {
-	return "top.t";
-    }
-}
-
-// return absolute scope of obj
-const char *prepend(const char *obj) {
-    static char buf[256];
-    snprintf(buf, sizeof(buf), "%s.%s", top(), obj);
-    return buf;
-}
-
-int _mon_check_range(VlVpiHandle& handle, int size, int left, int right) {
+static int _mon_check_props(VlVpiHandle& handle, int size, int direction, int scalar, int type) {
     VlVpiHandle iter_h, left_h, right_h;
     s_vpi_value value = {
       vpiIntVal
@@ -130,86 +106,65 @@ int _mon_check_range(VlVpiHandle& handle, int size, int left, int right) {
     // check size of object
     int vpisize = vpi_get(vpiSize, handle);
     CHECK_RESULT(vpisize, size);
-    // check size of range
-    vpisize = vpi_get(vpiSize, handle);
-    CHECK_RESULT(vpisize, size);
-    // check left hand side of range
-    left_h = vpi_handle(vpiLeftRange, handle);
-    CHECK_RESULT_NZ(left_h);
-    vpi_get_value(left_h, &value);
-    CHECK_RESULT(value.value.integer, left);
-    int coherency = value.value.integer;
-    // check right hand side of range
-    right_h = vpi_handle(vpiRightRange, handle);
-    CHECK_RESULT_NZ(right_h);
-    vpi_get_value(right_h, &value);
-    CHECK_RESULT(value.value.integer, right);
-    coherency -= value.value.integer;
-    // calculate size & check
-    coherency = abs(coherency) + 1;
-    CHECK_RESULT(coherency, size);
+    return 0;
+    int vpiscalar = vpi_get(vpiScalar, handle);
+    CHECK_RESULT(vpiscalar, scalar);
+    int vpivector = vpi_get(vpiVector, handle);
+    CHECK_RESULT(vpivector, !scalar);
+    if (vpivector) {
+      // check coherency for vectors
+      // get left hand side of range
+      left_h = vpi_handle(vpiLeftRange, handle);
+      CHECK_RESULT_NZ(left_h);
+      vpi_get_value(left_h, &value);
+      int coherency = value.value.integer;
+      // get right hand side of range
+      right_h = vpi_handle(vpiRightRange, handle);
+      CHECK_RESULT_NZ(right_h);
+      vpi_get_value(right_h, &value);
+      printf("%d:%d\n",coherency, value.value.integer); 
+      coherency -= value.value.integer;
+      // calculate size & check
+      coherency = abs(coherency) + 1;
+      CHECK_RESULT(coherency, size);
+    }
+
+    // check direction of object
+    int vpidir = vpi_get(vpiDirection, handle);
+    CHECK_RESULT(vpidir, direction);
+
+    // check type of object
+    int vpitype = vpi_get(vpiType, handle);
+    CHECK_RESULT(vpitype, type);
+
     return 0; // Ok
 }
 
-int _mon_check_memory() {
-    int cnt;
-    VlVpiHandle mem_h, lcl_h;
-    vpiHandle iter_h; // icarus does not like auto free of iterator handles
-    s_vpi_value value = {
-      vpiIntVal
-    };
-    vpi_printf((PLI_BYTE8*)"Check memory vpi ...\n");
-    mem_h = vpi_handle_by_name((PLI_BYTE8*)prepend("mem0"), NULL);
-    CHECK_RESULT_NZ(mem_h);
-    // check type
-    int vpitype = vpi_get(vpiType, mem_h);
-    CHECK_RESULT(vpitype, vpiMemory);
-    if (int status = _mon_check_range(mem_h, 16, 16, 1)) return status;
-    // iterate and store
-    iter_h = vpi_iterate(vpiMemoryWord, mem_h);
-    cnt = 0;
-    while (lcl_h = vpi_scan(iter_h)) {
-	value.value.integer = ++cnt;
-        vpi_put_value(lcl_h, &value, NULL, vpiNoDelay);
-        // check size and range
-        if (int status = _mon_check_range(lcl_h, 32, 31, 0)) return status;
+int mon_check_props() {
+    VlVpiHandle onebit_h = vpi_handle_by_name((PLI_BYTE8*)"t.onebit", NULL);
+      CHECK_RESULT_NZ(onebit_h);
+    if (int status = _mon_check_props(onebit_h, 1, vpiNoDirection, 1, vpiReg)) return status;
+    VlVpiHandle twoone_h = vpi_handle_by_name((PLI_BYTE8*)"t.twoone", NULL);
+    if (int status = _mon_check_props(twoone_h, 2, vpiNoDirection, 0, vpiReg)) return status;
+    VlVpiHandle fourthreetwoone_h = vpi_handle_by_name((PLI_BYTE8*)"t.fourthreetwoone", NULL);
+    if (int status = _mon_check_props(fourthreetwoone_h, 2, vpiNoDirection, 0, vpiMemory)) return status;
+    VlVpiHandle iter_h = vpi_iterate(vpiMemoryWord, fourthreetwoone_h);
+    while (VlVpiHandle word_h = vpi_scan(iter_h)) {
+      // check size and range
+      if (int status = _mon_check_props(word_h, 2, vpiNoDirection, 0, vpiMemoryWord)) return status;
     }
-    CHECK_RESULT(cnt, 16); // should be 16 addresses
-    // iterate and accumulate
-    iter_h = vpi_iterate(vpiMemoryWord, mem_h);
-    cnt = 0;
-    while (lcl_h = vpi_scan(iter_h)) {
-      ++cnt;
-      vpi_get_value(lcl_h, &value);
-      CHECK_RESULT(value.value.integer, cnt);
-    }
-    CHECK_RESULT(cnt, 16); // should be 16 addresses
-    // don't care for non verilator
-    // (crashes on Icarus)
-    if (!is_verilator) {
-	vpi_printf((PLI_BYTE8*)"Skipping property checks for simulator %s\n", info.product);
-        return 0; // Ok
-    }
-    // make sure trying to get properties that don't exist
-    // doesn't crash
-    int should_be_0 = vpi_get(vpiSize, iter_h);
-    CHECK_RESULT(should_be_0, 0);
-    should_be_0 = vpi_get(vpiIndex, iter_h);
-    CHECK_RESULT(should_be_0, 0);
-    vpiHandle should_be_NULL = vpi_handle(vpiLeftRange, iter_h);
-    CHECK_RESULT(should_be_NULL, 0);
-    should_be_NULL = vpi_handle(vpiRightRange, iter_h);
-    CHECK_RESULT(should_be_NULL, 0);
-    should_be_NULL = vpi_handle(vpiScope, iter_h);
-    CHECK_RESULT(should_be_NULL, 0);
-    return 0; // Ok
+      printf("clk\n"); 
+    VlVpiHandle clk_h = vpi_handle_by_name((PLI_BYTE8*)"t.clk", NULL);
+      if (int status = _mon_check_props(clk_h, 1, vpiInput, 1, vpiReg)) return status;
+      printf("quads0\n"); 
+    VlVpiHandle quads0_h = vpi_handle_by_name((PLI_BYTE8*)"t.quads0", NULL);
+    if (int status = _mon_check_props(quads0_h, 2, vpiInput, 0, vpiMemory)) return status;
+    return 0;
 }
 
 int mon_check() {
-    vpi_get_vlog_info(&info);
-    is_verilator = strcmp(info.product, "Verilator") == 0;
     // Callback from initial block in monitor
-    if (int status = _mon_check_memory()) return status;
+    if (int status = mon_check_props()) return status;
     return 0; // Ok
 }
 
@@ -236,7 +191,6 @@ void (*vlog_startup_routines[])() = {
 };
 
 #else
-
 double sc_time_stamp () {
     return main_time;
 }
@@ -244,7 +198,6 @@ int main(int argc, char **argv, char **env) {
     double sim_time = 1100;
     Verilated::commandArgs(argc, argv);
     Verilated::debug(0);
-    Verilated::fatalOnVpiError(0); // we're going to be checking for these errors do don't crash out
 
     VM_PREFIX* topp = new VM_PREFIX ("");  // Note null name - we're flattening it out
 
@@ -290,4 +243,3 @@ int main(int argc, char **argv, char **env) {
 }
 
 #endif
-
