@@ -317,7 +317,7 @@ sub new {
 	pl_filename => undef,	# Name of .pl file to get setup from
 	make_top_shell => 1,	# Make a default __top.v file
 	make_main => 1,		# Make __main.cpp
-	make_pli => 0,		# need to compile pli
+	make_pli => 0,          # need to compile pli
 	sim_time => 1100,
 	benchmark => $opt_benchmark,
 	verbose => $opt_verbose,
@@ -333,8 +333,8 @@ sub new {
 	v_flags2 => [],  # Overridden in some sim files
 	v_other_filenames => [],	# After the filename so we can spec multiple files
 	all_run_flags => [],
-	pli_flags => ["-I$ENV{VERILATOR_ROOT}/include/vltstd -fPIC -export-dynamic -shared -o $self->{obj_dir}/libvpi.so"],
-	# ATSIM
+        pli_flags => ["-I$ENV{VERILATOR_ROOT}/include/vltstd -fPIC -export-dynamic -shared -o $self->{obj_dir}/libvpi.so"],
+        # ATSIM
 	atsim => 0,
 	atsim_flags => [split(/\s+/,"-c +sv +define+ATSIM"),
 			"+sv_dir+$self->{obj_dir}/.athdl_compile"],
@@ -351,7 +351,7 @@ sub new {
 	iv => 0,
 	iv_flags => [split(/\s+/,"+define+iverilog -o $self->{obj_dir}/simiv")],
 	iv_flags2 => [],  # Overridden in some sim files
-	iv_pli => 0, # need to use pli
+        iv_pli => 0, # need to use pli
 	iv_run_flags => [],
 	# VCS
 	vcs => 0,
@@ -664,12 +664,12 @@ sub compile {
     }
 
     if ($param{make_pli}) {
-	$self->oprint("Compile vpi\n");
-	my @cmd = ('g++', @{$param{pli_flags}}, "-DIS_VPI", "$self->{t_dir}/$self->{name}.cpp");
+        $self->oprint("Compile vpi\n");
+        my @cmd = ('g++', @{$param{pli_flags}}, "-DIS_VPI", "$self->{t_dir}/$self->{name}.cpp");
 
-	$self->_run(logfile=>"$self->{obj_dir}/pli_compile.log",
-		    fails=>$param{fails},
-		    cmd=>\@cmd);
+        $self->_run(logfile=>"$self->{obj_dir}/pli_compile.log",
+    	    fails=>$param{fails},
+    	    cmd=>\@cmd);
     }
 
     return 1;
@@ -708,11 +708,11 @@ sub execute {
 		    );
     }
     elsif ($param{iv}) {
-	my @cmd = ($run_env."$self->{obj_dir}/simiv",
-		   @{$param{iv_run_flags}},
-		   @{$param{all_run_flags}},
+        my @cmd = ($run_env."$self->{obj_dir}/simiv",
+			  @{$param{iv_run_flags}},
+			  @{$param{all_run_flags}},
 		          );
-	if ($param{iv_pli}) {
+        if ($param{iv_pli}) {
 	    unshift @cmd, "vvp -m $self->{obj_dir}/libvpi.so";
 	}
 	$self->_run(logfile=>"$self->{obj_dir}/iv_sim.log",
@@ -1212,7 +1212,7 @@ sub _make_top_v {
     print $fh "   initial begin\n";
     print $fh "      \$display(\"-Tracing Waves to Dumpfile: $self->{vcd_filename}\");\n";
     print $fh "      \$dumpfile(\"$self->{vcd_filename}\");\n";
-    print $fh "      \$dumpvars(12, t);\n";
+    print $fh "      \$dumpvars(0, top);\n";
     print $fh "   end\n";
     print $fh "`endif\n";
 

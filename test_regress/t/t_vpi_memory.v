@@ -38,6 +38,10 @@ extern "C" int mon_check();
 `ifndef USE_VPI_NOT_DPI
      status = mon_check();
 `endif
+      if (status!=0) begin
+	 $write("%%Error: t_vpi_var.cpp:%0d: C Test failed\n", status);
+	 $stop;
+      end
       for (i = 16; i > 0; i--)
 	if (mem0[i] !== i) $write("%%Error: %d : GOT = %d  EXP = %d\n", i, mem0[i], i);
       $write("*-* All Finished *-*\n");
