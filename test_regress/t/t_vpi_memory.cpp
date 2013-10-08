@@ -37,7 +37,7 @@
 #include <iostream>
 using namespace std;
 
-#include "simulator.h"
+#include "TestSimulator.h"
 
 // __FILE__ is too long
 #define FILENM "t_vpi_memory.cpp"
@@ -136,7 +136,7 @@ int _mon_check_memory() {
       vpiIntVal
     };
     vpi_printf((PLI_BYTE8*)"Check memory vpi ...\n");
-    mem_h = vpi_handle_by_name((PLI_BYTE8*)simulator::instance().rooted("mem0"), NULL);
+    mem_h = vpi_handle_by_name((PLI_BYTE8*)TestSimulator::instance().rooted("mem0"), NULL);
     CHECK_RESULT_NZ(mem_h);
     // check type
     int vpitype = vpi_get(vpiType, mem_h);
@@ -163,8 +163,8 @@ int _mon_check_memory() {
     CHECK_RESULT(cnt, 16); // should be 16 addresses
     // don't care for non verilator
     // (crashes on Icarus)
-    if (simulator::instance().get().icarus) {
-	vpi_printf((PLI_BYTE8*)"Skipping property checks for simulator %s\n", simulator::instance().get_info().product);
+    if (TestSimulator::instance().get().icarus) {
+	vpi_printf((PLI_BYTE8*)"Skipping property checks for simulator %s\n", TestSimulator::instance().get_info().product);
         return 0; // Ok
     }
     // make sure trying to get properties that don't exist
@@ -192,8 +192,19 @@ int mon_check() {
 
 #ifdef IS_VPI
 
+static int mon_check_vpi() {
+  vpiHandle href = vpi_handle(vpiSysTfCall, 0);
+  s_vpi_value vpi_value;
+
+  vpi_value.format = vpiIntVal;
+  vpi_value.value.integer = mon_check();
+  vpi_put_value(href, &vpi_value, NULL, vpiNoDelay);
+
+  return 0;  
+}
+
 static s_vpi_systf_data vpi_systf_data[] = {
-  {vpiSysFunc, vpiSysFunc, (PLI_BYTE8*)"$mon_check", (PLI_INT32(*)(PLI_BYTE8*))mon_check, 0, 0, 0},
+  {vpiSysFunc, vpiIntFunc, (PLI_BYTE8*)"$mon_check", (PLI_INT32(*)(PLI_BYTE8*))mon_check_vpi, 0, 0, 0},
   0
 };
 
