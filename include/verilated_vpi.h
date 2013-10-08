@@ -204,7 +204,7 @@ public:
     const vluint32_t index() { return m_index; }
     virtual const vluint32_t type() {
       if (varp()->vldir() != vpiNoDirection) return vpiPort;
-      return (varp()->dims()>1) ? vpiMemory : vpiReg; /* but might be wire, logic, port */
+      return (varp()->dims()>1) ? vpiMemory : vpiReg; /* but might be wire, logic */
     }
     virtual const vluint32_t size() { return get_range().elements(); }
     virtual const VerilatedRange* rangep() { return &get_range(); }
