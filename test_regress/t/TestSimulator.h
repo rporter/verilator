@@ -13,7 +13,7 @@
 //
 //*************************************************************************
 
-class simulator {
+class TestSimulator {
  private :
    typedef struct {
      int verilator;
@@ -25,21 +25,21 @@ class simulator {
    s_vpi_vlog_info   info;
    sim_types         simulators;
  public :
-   static simulator* self;
-   simulator() {
+   static TestSimulator* self;
+   TestSimulator() {
      vpi_get_vlog_info(&info);
      simulators.verilator = strcmp(info.product, "Verilator") == 0;
      simulators.icarus = strcmp(info.product, "Icarus Verilog") == 0;
    }
-   ~simulator();
-   static simulator& instance() {
-     if (self == NULL) self = new simulator();
+   ~TestSimulator();
+   static TestSimulator& instance() {
+     if (self == NULL) self = new TestSimulator();
      return *self;
    }
-   s_vpi_vlog_info& get_info() {
+   const s_vpi_vlog_info& get_info() {
      return info;
    }
-   sim_types& get() {
+   const sim_types& get() {
     return simulators;
    }
    bool is_event_driven() {
@@ -64,6 +64,6 @@ class simulator {
   }
 };
 
-simulator *simulator::self = NULL;
+TestSimulator *TestSimulator::self = NULL;
 
-#define VPI_HANDLE(signal) vpi_handle_by_name((PLI_BYTE8*)simulator::instance().rooted(signal), NULL);
+#define VPI_HANDLE(signal) vpi_handle_by_name((PLI_BYTE8*)TestSimulator::instance().rooted(signal), NULL);

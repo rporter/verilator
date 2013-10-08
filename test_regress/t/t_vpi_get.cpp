@@ -37,7 +37,7 @@
 #include <iostream>
 using namespace std;
 
-#include "simulator.h"
+#include "TestSimulator.h"
 
 // __FILE__ is too long
 #define FILENM "t_vpi_get.cpp"
@@ -114,7 +114,7 @@ static int _mon_check_props(VlVpiHandle& handle, int size, int direction, int sc
     CHECK_RESULT(vpisize, size);
 
     // icarus verilog does not support vpiScalar, vpiVector or vpi*Range
-    if (simulator::instance().has_get_scalar()) {
+    if (TestSimulator::instance().has_get_scalar()) {
       int vpiscalar = vpi_get(vpiScalar, handle);
       CHECK_RESULT((bool)vpiscalar, (bool)scalar);
       int vpivector = vpi_get(vpiVector, handle);
@@ -122,7 +122,7 @@ static int _mon_check_props(VlVpiHandle& handle, int size, int direction, int sc
     }
 
     // Icarus only supports ranges on memories
-    if (!scalar && !(simulator::instance().get().icarus && type != vpiMemory)) {
+    if (!scalar && !(TestSimulator::instance().get().icarus && type != vpiMemory)) {
       VlVpiHandle left_h, right_h;
 
       // check coherency for vectors
@@ -167,7 +167,7 @@ struct params {
 } values[] = {
     {"onebit", {1, vpiNoDirection, 1, vpiReg}, {0, 0, 0, 0}},
     {"twoone", {2, vpiNoDirection, 0, vpiReg}, {0, 0, 0, 0}},
-    {"onetwo", {2, vpiNoDirection, 0, simulator::instance().get().verilator?vpiReg:vpiMemory}, {0, 0, 0, 0}},
+    {"onetwo", {2, vpiNoDirection, 0, TestSimulator::instance().get().verilator?vpiReg:vpiMemory}, {0, 0, 0, 0}},
     {"fourthreetwoone", {2, vpiNoDirection, 0, vpiMemory}, {2, vpiNoDirection, 0, vpiMemoryWord}},
     {"clk", {1, vpiInput, 1, vpiPort}, {0, 0, 0, 0}},
     {"testin", {16, vpiInput, 0, vpiPort}, {0, 0, 0, 0}},

@@ -37,7 +37,7 @@
 #include <iostream>
 using namespace std;
 
-#include "simulator.h"
+#include "TestSimulator.h"
 
 // __FILE__ is too long
 #define FILENM "t_vpi_var.cpp"
@@ -164,7 +164,7 @@ int _mon_check_callbacks() {
 
 int _value_callback(p_cb_data cb_data) {
 
-    if (simulator::instance().get().verilator) {
+    if (TestSimulator::instance().get().verilator) {
       // this check only makes sense in Verilator
       CHECK_RESULT(cb_data->value->value.integer+10, main_time);
     }
@@ -173,7 +173,7 @@ int _value_callback(p_cb_data cb_data) {
 }
 
 int _value_callback_half(p_cb_data cb_data) {
-    if (simulator::instance().get().verilator) {
+    if (TestSimulator::instance().get().verilator) {
       // this check only makes sense in Verilator
       CHECK_RESULT(cb_data->value->value.integer*2+10, main_time);
     }
@@ -242,7 +242,7 @@ int _mon_check_var() {
     VlVpiHandle vh1 = VPI_HANDLE("onebit");
     CHECK_RESULT_NZ(vh1);
 
-    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)simulator::instance().top(), NULL);
+    VlVpiHandle vh2 = vpi_handle_by_name((PLI_BYTE8*)TestSimulator::instance().top(), NULL);
     CHECK_RESULT_NZ(vh2);
 
     // scope attributes
@@ -250,7 +250,7 @@ int _mon_check_var() {
     p = vpi_get_str(vpiName, vh2);
     CHECK_RESULT_CSTR(p, "t");
     p = vpi_get_str(vpiFullName, vh2);
-    CHECK_RESULT_CSTR(p, simulator::instance().top());
+    CHECK_RESULT_CSTR(p, TestSimulator::instance().top());
 
     VlVpiHandle vh3 = vpi_handle_by_name((PLI_BYTE8*)"onebit", vh2);
     CHECK_RESULT_NZ(vh3);
@@ -259,7 +259,7 @@ int _mon_check_var() {
     PLI_INT32 d;
     d = vpi_get(vpiType, vh3);
     CHECK_RESULT(d, vpiReg);
-    if (simulator::instance().has_get_scalar()) {
+    if (TestSimulator::instance().has_get_scalar()) {
       d = vpi_get(vpiVector, vh3);
       CHECK_RESULT(d, 0);
     }
@@ -267,12 +267,12 @@ int _mon_check_var() {
     p = vpi_get_str(vpiName, vh3);
     CHECK_RESULT_CSTR(p, "onebit");
     p = vpi_get_str(vpiFullName, vh3);
-    CHECK_RESULT_CSTR(p, simulator::instance().rooted("onebit"));
+    CHECK_RESULT_CSTR(p, TestSimulator::instance().rooted("onebit"));
 
     // array attributes
     VlVpiHandle vh4 = VPI_HANDLE("fourthreetwoone");
     CHECK_RESULT_NZ(vh4);
-    if (simulator::instance().has_get_scalar()) {
+    if (TestSimulator::instance().has_get_scalar()) {
       d = vpi_get(vpiVector, vh4);
       CHECK_RESULT(d, 1);
     }
@@ -321,12 +321,12 @@ int _mon_check_varlist() {
     VlVpiHandle vh11 = vpi_scan(vh10);
     CHECK_RESULT_NZ(vh11);
     p = vpi_get_str(vpiFullName, vh11);
-    CHECK_RESULT_CSTR(p, simulator::instance().rooted("sub.subsig1"));
+    CHECK_RESULT_CSTR(p, TestSimulator::instance().rooted("sub.subsig1"));
 
     VlVpiHandle vh12 = vpi_scan(vh10);
     CHECK_RESULT_NZ(vh12);
     p = vpi_get_str(vpiFullName, vh12);
-    CHECK_RESULT_CSTR(p, simulator::instance().rooted("sub.subsig2"));
+    CHECK_RESULT_CSTR(p, TestSimulator::instance().rooted("sub.subsig2"));
 
     VlVpiHandle vh13 = vpi_scan(vh10);
     CHECK_RESULT(vh13,0);
@@ -528,7 +528,7 @@ int _mon_check_putget_str(p_cb_data cb_data) {
 	// setup and install
         for (int i=1; i<=128; i++) {
             char buf[32];
-            snprintf(buf, sizeof(buf), simulator::instance().rooted("arr[%d].arr"), i);
+            snprintf(buf, sizeof(buf), TestSimulator::instance().rooted("arr[%d].arr"), i);
 	    CHECK_RESULT_NZ(data[i].scope   = vpi_handle_by_name((PLI_BYTE8*)buf, NULL));
 	    CHECK_RESULT_NZ(data[i].sig     = vpi_handle_by_name((PLI_BYTE8*)"sig", data[i].scope));
 	    CHECK_RESULT_NZ(data[i].rfr     = vpi_handle_by_name((PLI_BYTE8*)"rfr", data[i].scope));
@@ -561,7 +561,7 @@ int _mon_check_vlog_info() {
     CHECK_RESULT_CSTR(vlog_info.argv[1], "+PLUS");
     CHECK_RESULT_CSTR(vlog_info.argv[2], "+INT=1234");
     CHECK_RESULT_CSTR(vlog_info.argv[3], "+STRSTR");
-    if (simulator::instance().get().verilator) {
+    if (TestSimulator::instance().get().verilator) {
       CHECK_RESULT_CSTR(vlog_info.product, "Verilator");
       CHECK_RESULT(strlen(vlog_info.version) > 0, 1);
     }
