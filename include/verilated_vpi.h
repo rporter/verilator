@@ -180,7 +180,7 @@ class VerilatedVpioVar : public VerilatedVpio {
 protected:
     void*			m_varDatap;	// varp()->datap() adjusted for array entries
     vlsint32_t			m_index;
-    const VerilatedRange&       get_range() {
+    const VerilatedRange&	get_range() {
 	// Determine number of dimensions and return outermost
 	return (m_varp->dims()>1)?m_varp->array():m_varp->range();
     }
