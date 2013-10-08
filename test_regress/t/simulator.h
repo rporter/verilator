@@ -1,3 +1,18 @@
+// -*- mode: C++; c-file-style: "cc-mode" -*-
+//*************************************************************************
+//
+// Copyright 2010-2011 by Wilson Snyder. This program is free software; you can
+// redistribute it and/or modify it under the terms of either the GNU
+// Lesser General Public License Version 3 or the Perl Artistic License.
+// Version 2.0.
+//
+// Verilator is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+//*************************************************************************
+
 class simulator {
  private :
    typedef struct {
@@ -29,9 +44,6 @@ class simulator {
    }
    bool is_event_driven() {
      return !simulators.verilator;
-   }
-   bool is_free() {
-     return simulators.verilator || simulators.icarus;
    }
    bool has_get_scalar() {
      return !simulators.icarus;
