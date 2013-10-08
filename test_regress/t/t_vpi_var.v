@@ -64,16 +64,17 @@ extern "C" int mon_check();
 `endif
       if (status!=0) begin
 	 $write("%%Error: t_vpi_var.cpp:%0d: C Test failed\n", status);
-	 $finish;
+	 $stop;
       end
-      if (onebit != 1'b1) $finish;
-      if (quads[2] != 62'h12819213_abd31a1c) $finish;
-      if (quads[3] != 62'h1c77bb9b_3784ea09) $finish;
-      if (text_byte != "A") $finish;
-      if (text_half != "T2") $finish;
-      if (text_word != "Tree") $finish;
-      if (text_long != "44Four44") $finish;
-      if (text != "lorem ipsum") $finish;
+      $write("%%Info: Checking results\n");
+      if (onebit != 1'b1) $stop;
+      if (quads[2] != 62'h12819213_abd31a1c) $stop;
+      if (quads[3] != 62'h1c77bb9b_3784ea09) $stop;
+      if (text_byte != "A") $stop;
+      if (text_half != "T2") $stop;
+      if (text_word != "Tree") $stop;
+      if (text_long != "44Four44") $stop;
+      if (text != "lorem ipsum") $stop;
    end
 
    always @(posedge clk) begin
@@ -85,7 +86,6 @@ extern "C" int mon_check();
 	 $write("*-* All Finished *-*\n");
 	 $finish;
       end
-
    end
 
    genvar i;
@@ -99,6 +99,10 @@ endmodule : t
 module sub;
    reg subsig1 /*verilator public_flat_rd*/;
    reg subsig2 /*verilator public_flat_rd*/;
+`ifdef iverilog
+   // stop icarus optimizing signals away
+   wire redundant = subsig1 | subsig2;
+`endif
 endmodule : sub
 
 module arr;
@@ -111,6 +115,11 @@ module arr;
    reg 		  check /*verilator public_flat_rw*/;
    reg          verbose /*verilator public_flat_rw*/;
 
+   initial begin
+      sig = {LENGTH{1'b0}};
+      rfr = {LENGTH{1'b0}};
+   end
+   
    always @(posedge check) begin
      if (verbose) $display("%m : %x %x", sig, rfr);
      if (check && sig != rfr) $stop;
