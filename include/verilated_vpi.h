@@ -284,9 +284,7 @@ public:
     void iterationInc() { if (!(m_done = m_iteration == m_varp->array().left())) m_iteration+=m_direction; }
     virtual vpiHandle dovpi_scan() {
 	vpiHandle result;
-	if (m_done) {
-		return 0;
-	}
+	if (m_done) return 0;
 	result = vpi_handle_by_index(m_handle, m_iteration);
 	iterationInc();
 	return result;
