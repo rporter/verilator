@@ -148,7 +148,7 @@ int _mon_check_callbacks_error(p_cb_data cb_data) {
 int _mon_check_callbacks() {
     t_cb_data cb_data;
     cb_data.reason = cbEndOfSimulation;
-    cb_data.cb_rtn = NULL;
+    cb_data.cb_rtn = _mon_check_callbacks_error;
     cb_data.user_data = 0;
     cb_data.value = NULL;
     cb_data.time = NULL;
@@ -612,7 +612,7 @@ int _mon_check_vl_str() {
 int mon_check() {
     // Callback from initial block in monitor
     if (int status = _mon_check_mcd()) return status;
-//    if (int status = _mon_check_callbacks()) return status;
+    if (int status = _mon_check_callbacks()) return status;
     if (int status = _mon_check_value_callbacks()) return status;
     if (int status = _mon_check_var()) return status;
     if (int status = _mon_check_varlist()) return status;
