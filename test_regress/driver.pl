@@ -713,7 +713,7 @@ sub execute {
 		   @{$param{all_run_flags}},
 		          );
 	if ($param{iv_pli}) {
-	    unshift @cmd, "vvp -m $self->{obj_dir}/libvpi.so";
+	    unshift @cmd, "vvp -n -m $self->{obj_dir}/libvpi.so"; # don't enter command line on $stop, include vpi
 	}
 	$self->_run(logfile=>"$self->{obj_dir}/iv_sim.log",
 		    fails=>$param{fails},
