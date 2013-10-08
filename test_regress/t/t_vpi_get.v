@@ -39,6 +39,10 @@ extern "C" int mon_check();
    wire 	redundant = onebit | onetwo[1] | twoone | fourthreetwoone[3];
 `endif
 
+   wire         subin  /*verilator public_flat_rd*/;
+   wire         subout /*verilator public_flat_rd*/;
+   sub sub(.*);
+
    // Test loop
    initial begin
 `ifdef VERILATOR
@@ -60,3 +64,8 @@ extern "C" int mon_check();
 
 endmodule : t
 
+module sub (
+   input  subin  /*verilator public_flat_rd*/,
+   output subout /*verilator public_flat_rd*/
+);
+endmodule : sub

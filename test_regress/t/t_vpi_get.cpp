@@ -40,7 +40,7 @@ using namespace std;
 #include "simulator.h"
 
 // __FILE__ is too long
-#define FILENM "t_vpi_var.cpp"
+#define FILENM "t_vpi_get.cpp"
 
 #define TEST_MSG if (0) printf
 
@@ -113,13 +113,18 @@ static int _mon_check_props(VlVpiHandle& handle, int size, int direction, int sc
     int vpisize = vpi_get(vpiSize, handle);
     CHECK_RESULT(vpisize, size);
 
+    // icarus verilog does not support vpiScalar, vpiVector or vpi*Range
     if (!simulator::instance().get().icarus) {
-      VlVpiHandle left_h, right_h;
 
       int vpiscalar = vpi_get(vpiScalar, handle);
       CHECK_RESULT((bool)vpiscalar, (bool)scalar);
       int vpivector = vpi_get(vpiVector, handle);
       CHECK_RESULT((bool)vpivector, (bool)!scalar);
+    }
+
+    // Icarus only supports ranges on memories
+    if (!scalar && !(simulator::instance().get().icarus && type != vpiMemory)) {
+      VlVpiHandle left_h, right_h;
 
       // check coherency for vectors
       // get left hand side of range
@@ -138,7 +143,8 @@ static int _mon_check_props(VlVpiHandle& handle, int size, int direction, int sc
       CHECK_RESULT(coherency, size);
     }
 
-    if (!(simulator::instance().get().icarus && direction == vpiNoDirection)) {
+    // Only check direction on ports
+    if (type == vpiPort) {
       // check direction of object
       int vpidir = vpi_get(vpiDirection, handle);
       CHECK_RESULT(vpidir, direction);
@@ -167,6 +173,8 @@ struct params {
     {"clk", {1, vpiInput, 1, vpiPort}, {0, 0, 0, 0}},
     {"testin", {16, vpiInput, 0, vpiPort}, {0, 0, 0, 0}},
     {"testout", {24, vpiOutput, 0, vpiPort}, {0, 0, 0, 0}},
+    {"sub.subin", {1, vpiInput, 1, vpiPort}, {0, 0, 0, 0}},
+    {"sub.subout", {1, vpiOutput, 1, vpiPort}, {0, 0, 0, 0}},
     {NULL, 0, 0, 0, 0}
 };
 
@@ -202,8 +210,19 @@ int mon_check() {
 
 #ifdef IS_VPI
 
+static int mon_check_vpi() {
+  vpiHandle href = vpi_handle(vpiSysTfCall, 0);
+  s_vpi_value vpi_value;
+
+  vpi_value.format = vpiIntVal;
+  vpi_value.value.integer = mon_check();
+  vpi_put_value(href, &vpi_value, NULL, vpiNoDelay);
+
+  return 0;  
+}
+
 static s_vpi_systf_data vpi_systf_data[] = {
-  {vpiSysFunc, vpiSysFunc, (PLI_BYTE8*)"$mon_check", (PLI_INT32(*)(PLI_BYTE8*))mon_check, 0, 0, 0},
+  {vpiSysFunc, vpiIntFunc, (PLI_BYTE8*)"$mon_check", (PLI_INT32(*)(PLI_BYTE8*))mon_check_vpi, 0, 0, 0},
   0
 };
 
