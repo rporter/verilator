@@ -113,7 +113,7 @@ module arr;
 
    always @(posedge check) begin
      if (verbose) $display("%m : %x %x", sig, rfr);
-     if (check && sig != rfr) $finish;
+     if (check && sig != rfr) $stop;
      check <= 0;
    end
 
