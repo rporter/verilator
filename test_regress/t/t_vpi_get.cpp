@@ -114,8 +114,7 @@ static int _mon_check_props(VlVpiHandle& handle, int size, int direction, int sc
     CHECK_RESULT(vpisize, size);
 
     // icarus verilog does not support vpiScalar, vpiVector or vpi*Range
-    if (!simulator::instance().get().icarus) {
-
+    if (simulator::instance().has_get_scalar()) {
       int vpiscalar = vpi_get(vpiScalar, handle);
       CHECK_RESULT((bool)vpiscalar, (bool)scalar);
       int vpivector = vpi_get(vpiVector, handle);
